@@ -3,9 +3,24 @@ import os
 # Add the project root to Python path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from fastapi import FastAPI, Request
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+# Check if dependencies are installed
+try:
+    from fastapi import FastAPI, Request
+    from fastapi.middleware.cors import CORSMiddleware
+    from fastapi.responses import JSONResponse
+except ImportError:
+    print("\n===== MISSING DEPENDENCIES =====")
+    print("Some required packages are not installed. Please run:")
+    print("pip install -r requirements.txt")
+    print("\nIf requirements.txt is not available, run:")
+    print("pip install fastapi uvicorn pandas requests beautifulsoup4 python-dotenv")
+    print("\nFor data analysis and visualization capabilities, you may also want to install:")
+    print("pip install matplotlib seaborn plotly numpy scipy statsmodels")
+    print("\nFor advanced dashboarding, consider:")
+    print("pip install dash streamlit")
+    print("=====================================\n")
+    sys.exit(1)
+
 from app.api.api import api_router
 from app.core.config import settings
 import uvicorn
