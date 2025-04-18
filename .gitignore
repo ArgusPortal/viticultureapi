@@ -1,0 +1,18 @@
+# Ambiente virtual
+.venv/
+venv/
+ENV/
+
+# Arquivos de configuração
+.env
+*.pyc
+__pycache__/
+
+# Logs
+*.log
+
+# Outros
+.DS_Store
+
+README.md
+*.db
