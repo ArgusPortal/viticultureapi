@@ -13,6 +13,10 @@ class BaseScraper:
     BASE_URL = "http://vitibrasil.cnpuv.embrapa.br/index.php"
     DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "data")
     
+    # Constants for year range (used by all scrapers)
+    MIN_YEAR = 1970
+    MAX_YEAR = 2023
+    
     def __init__(self):
         self.session = requests.Session()
         retry_strategy = Retry(
@@ -21,6 +25,90 @@ class BaseScraper:
             status_forcelist=[500, 502, 503, 504]
         )
         self.session.mount('http://', HTTPAdapter(max_retries=retry_strategy))
+    
+    def _get_fallback_years(self):
+        """Return a fixed range of years based on the known data range (1970-2023)"""
+        fallback_years = list(range(self.MIN_YEAR, self.MAX_YEAR + 1))
+        logger.info(f"Using complete year range from {self.MIN_YEAR} to {self.MAX_YEAR}")
+        return sorted(fallback_years, reverse=True)  # Return in descending order (newest first)
+    
+    def _extract_years_from_text(self, soup):
+        """Extract years from text content in the soup"""
+        if not soup:
+            return set()
+            
+        # Look for years within the valid range (1970-2023)
+        year_pattern = re.compile(r'\b(19[7-9]\d|20[0-1]\d|202[0-3])\b')  # Match years 1970-2023
+        years = set()
+        
+        try:
+            for text in soup.stripped_strings:
+                matches = year_pattern.findall(text)
+                for match in matches:
+                    try:
+                        year = int(match)
+                        # Ensure year is within valid range
+                        if self.MIN_YEAR <= year <= self.MAX_YEAR:
+                            years.add(year)
+                    except ValueError:
+                        continue
+            
+            if years:
+                logger.info(f"Inferred {len(years)} available years: {sorted(years, reverse=True)}")
+        except Exception as e:
+            logger.error(f"Error extracting years from text: {str(e)}")
+        
+        return years
+    
+    def _get_available_years(self):
+        """
+        Get a list of all available years from the site.
+        This helps us fetch data for all years when no specific year is requested.
+        """
+        try:
+            # Try to get years from main page
+            soup = self._get_soup(self.BASE_URL)
+            if not soup:
+                logger.warning("Failed to get soup for available years")
+                return self._get_fallback_years()
+                
+            # Simple, direct approach to extract years
+            years = []
+            
+            # Method 1: Try to find the year dropdown
+            year_select = soup.find('select', {'name': 'ano'})
+            if year_select:
+                # Safer way to check for options
+                try:
+                    # Get all option elements directly using regex
+                    option_elements = soup.find_all('option')
+                    if option_elements:
+                        for option in option_elements:
+                            year_text = option.text.strip() if hasattr(option, 'text') else ""
+                            if year_text.isdigit():
+                                try:
+                                    year = int(year_text)
+                                    # Ensure year is within valid range
+                                    if self.MIN_YEAR <= year <= self.MAX_YEAR:
+                                        years.append(year)
+                                except ValueError:
+                                    continue
+                except Exception as e:
+                    logger.warning(f"Error extracting years from dropdown: {str(e)}")
+            
+            # Method 2: Extract years from any text in the page
+            if not years:
+                years = self._extract_years_from_text(soup)
+            
+            # If we found years, return them, otherwise use fallback
+            if years:
+                return sorted(list(years), reverse=True)
+            else:
+                return self._get_fallback_years()
+                
+        except Exception as e:
+            logger.error(f"Error getting available years: {str(e)}")
+            return self._get_fallback_years()
     
     def _get_soup(self, url, params=None):
         """

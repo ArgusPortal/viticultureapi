@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Query, HTTPException, Depends
-from typing import Optional
+from typing import Optional, List, Dict, Any, Union
 from app.scraper.base_scraper import BaseScraper
 import pandas as pd
 import logging
@@ -7,6 +7,8 @@ import os
 from urllib.parse import urlencode
 import re
 from datetime import datetime
+import requests
+import traceback
 
 logger = logging.getLogger(__name__)
 
@@ -49,47 +51,247 @@ class ProductionScraper(BaseScraper):
         # If we still can't find the year, use the current year as a last resort
         return datetime.now().year
 
-    def get_general_production(self, year=None):
-        """Obtém dados gerais de produção vitivinícola"""
-        params = {
-            'opcao': 'opt_02',
-            'subopcao': 'subopt_00'
-        }
+    def _get_fallback_years(self):
+        """Return a fixed range of years based on the known data range (1970-2023)"""
+        # Define the actual range of years covered in the database
+        # This prevents returning non-existent future years or limiting to only recent years
+        min_year = 1970
+        max_year = 2023  # Set max year to the known last year in the dataset
         
-        if year:
-            params['ano'] = year
+        fallback_years = list(range(min_year, max_year + 1))
+        logger.info(f"Using complete year range from {min_year} to {max_year}")
+        return sorted(fallback_years, reverse=True)  # Return in descending order (newest first)
+
+    def _extract_years_from_text(self, soup):
+        """Extract years from text content in the soup"""
+        if not soup:
+            return set()
             
-        # Try web scraping first
-        soup = self._get_soup(self.BASE_URL, params)
-        df = self._extract_table_data(soup)
+        # Look for years within the valid range (1970-2023)
+        year_pattern = re.compile(r'\b(19[7-9]\d|20[0-1]\d|202[0-3])\b')  # Match years 1970-2023
+        years = set()
         
-        # If web scraping fails or returns empty data, try CSV fallback
-        if df.empty:
-            logger.warning("Web scraping returned empty data, trying CSV fallback")
-            fallback_data = self._fallback_to_csv('production', None, year)
-            if fallback_data and fallback_data.get("data"):
-                logger.info("Successfully loaded data from CSV fallback")
+        try:
+            for text in soup.stripped_strings:
+                matches = year_pattern.findall(text)
+                for match in matches:
+                    try:
+                        year = int(match)
+                        # Ensure year is within valid range
+                        if 1970 <= year <= 2023:
+                            years.add(year)
+                    except ValueError:
+                        continue
+            
+            if years:
+                logger.info(f"Inferred {len(years)} available years: {sorted(years, reverse=True)}")
+        except Exception as e:
+            logger.error(f"Error extracting years from text: {str(e)}")
+        
+        return years
+
+    def _get_available_years(self):
+        """
+        Get a list of all available years from the site.
+        This helps us fetch data for all years when no specific year is requested.
+        """
+        try:
+            # Try to get years from main page
+            soup = self._get_soup(self.BASE_URL)
+            if not soup:
+                logger.warning("Failed to get soup for available years")
+                return self._get_fallback_years()
+                
+            # Simple, direct approach to extract years
+            years = []
+            
+            # Method 1: Try to find the year dropdown
+            year_select = soup.find('select', {'name': 'ano'})
+            if year_select:
+                # Safer way to check for options
+                try:
+                    # Get all option elements directly using regex
+                    option_elements = soup.find_all('option')
+                    if option_elements:
+                        for option in option_elements:
+                            year_text = option.text.strip() if hasattr(option, 'text') else ""
+                            if year_text.isdigit():
+                                try:
+                                    year = int(year_text)
+                                    # Ensure year is within valid range
+                                    if 1970 <= year <= 2023:
+                                        years.append(year)
+                                except ValueError:
+                                    continue
+                except Exception as e:
+                    logger.warning(f"Error extracting years from dropdown: {str(e)}")
+            
+            # Method 2: Extract years from any text in the page
+            if not years:
+                years = self._extract_years_from_text(soup)
+            
+            # If we found years, return them, otherwise use fallback
+            if years:
+                return sorted(list(years), reverse=True)
+            else:
+                return self._get_fallback_years()
+                
+        except Exception as e:
+            logger.error(f"Error getting available years: {str(e)}")
+            return self._get_fallback_years()
+
+    def _fetch_year_data(self, params, year, category_type=None):
+        """
+        Fetch data for a specific year.
+        
+        Args:
+            params: Request parameters
+            year: Year to fetch
+            category_type: Optional category filter ('wine', 'grape', 'derivative')
+            
+        Returns:
+            List of record dictionaries or None on error
+        """
+        try:
+            year_params = params.copy()
+            if year is not None:
+                year_params['ano'] = year
+            
+            soup = self._get_soup(self.BASE_URL, year_params)
+            if not soup:
+                logger.warning(f"Failed to get soup for year {year}")
+                return None
+                
+            df = self._extract_table_data(soup)
+            
+            if df.empty:
+                logger.warning(f"Empty dataframe for year {year}")
+                return None
+            
+            # Clean and convert data
+            try:
+                if 'Quantidade' in df.columns:
+                    df['Quantidade'] = df['Quantidade'].astype(str).str.replace('.', '')
+                    df['Quantidade'] = df['Quantidade'].astype(str).str.replace(',', '.').astype(float)
+                elif 'Quantidade (L.)' in df.columns:
+                    df['Quantidade'] = df['Quantidade (L.)'].astype(str).str.replace('.', '')
+                    df['Quantidade'] = df['Quantidade'].astype(str).str.replace(',', '.').astype(float)
+            except Exception as e:
+                logger.warning(f"Error cleaning quantity data: {str(e)}")
+            
+            # Convert to records
+            records = df.to_dict('records')
+            
+            # Filter by category if needed
+            if category_type and records:
+                records = self._filter_data_by_category(records, category_type)
+            
+            # Add year to each record if year isn't already present
+            if records:
+                for record in records:
+                    if 'Ano' not in record or not record['Ano']:
+                        record['Ano'] = year
+            
+            return records
+        except Exception as e:
+            logger.error(f"Error in _fetch_year_data for year {year}: {str(e)}", exc_info=True)
+            return None
+
+    def _get_production_data(self, params, category_type=None, year=None):
+        """
+        Generic method to fetch production data.
+        
+        Args:
+            params: Request parameters
+            category_type: Optional category filter ('wine', 'grape', 'derivative')
+            year: Optional year filter
+            
+        Returns:
+            Dict with fetched data
+        """
+        # Create source URL for debugging
+        source_url = self._get_source_url(params)
+        
+        # Try CSV fallback first, especially for multi-year queries
+        if not year:
+            fallback_data = self._fallback_to_csv('production', category_type, None)
+            if fallback_data and fallback_data.get("data") and len(fallback_data.get("data", [])) > 0:
+                logger.info(f"Successfully loaded multi-year {category_type or 'general'} data from CSV")
                 return fallback_data
         
-        # Extract current year if not specified
-        current_year = year or self._extract_current_year_from_page(soup)
-        
-        # Limpar e converter dados se necessário
-        if not df.empty and 'Quantidade' in df.columns:
-            df['Quantidade'] = df['Quantidade'].str.replace('.', '')
-            df['Quantidade'] = df['Quantidade'].str.replace(',', '.').astype(float)
+        # If specific year is requested or CSV fallback failed
+        if year:
+            # Try web scraping first for the specific year
+            records = self._fetch_year_data(params, year, category_type)
             
-            # Add year information to each record
-            if current_year:
-                for record in df.to_dict('records'):
-                    record['Ano'] = current_year
-        
-        # Return a consistent format
-        return {
-            "data": df.to_dict('records') if not df.empty else [], 
-            "source_url": self._get_source_url(params),
-            "source": "web_scraping"
-        }
+            # If web scraping fails, try CSV fallback for that year
+            if not records:
+                logger.warning(f"Web scraping returned empty data for {category_type or 'general'} "
+                              f"for year {year}, trying CSV fallback")
+                fallback_data = self._fallback_to_csv('production', category_type, year)
+                if fallback_data and fallback_data.get("data"):
+                    logger.info(f"Successfully loaded {category_type or 'general'} data for year {year} from CSV fallback")
+                    return fallback_data
+                
+                # If even CSV fallback failed, return empty result
+                return {"data": [], "source": "no_data_found", "source_url": source_url}
+            
+            # Web scraping successful
+            return {
+                "data": records,
+                "source": "web_scraping",
+                "source_url": source_url
+            }
+        else:
+            # For multi-year requests where CSV failed, try web scraping for multiple years
+            available_years = self._get_available_years()
+            if not available_years:
+                logger.warning(f"Could not determine available years for {category_type or 'general'} data")
+                # Try web scraping without year parameter
+                records = self._fetch_year_data(params, None, category_type)
+                
+                return {
+                    "data": records or [],
+                    "source": "web_scraping",
+                    "source_url": source_url
+                }
+            
+            # Fetch data for each available year and combine
+            all_data = []
+            # No limit on years - get all available years
+            years_with_data = 0
+            
+            logger.info(f"Fetching data for all {len(available_years)} available years")
+            
+            for yr in available_years:  # Removed the limit to get all years
+                try:
+                    records = self._fetch_year_data(params, yr, category_type)
+                    if records:
+                        all_data.extend(records)
+                        years_with_data += 1
+                        logger.info(f"Added {len(records)} {category_type or 'general'} records for year {yr}")
+                except Exception as e:
+                    logger.error(f"Error fetching {category_type or 'general'} data for year {yr}: {str(e)}")
+            
+            logger.info(f"Retrieved data for {years_with_data} out of {len(available_years)} years attempted")
+            
+            return {
+                "data": all_data,
+                "source": "web_scraping_multi_year",
+                "source_url": source_url
+            }
+
+    def get_general_production(self, year=None):
+        """Obtém dados gerais de produção vitivinícola"""
+        try:
+            params = {
+                'opcao': 'opt_02',
+                'subopcao': 'subopt_00'
+            }
+            return self._get_production_data(params, None, year)
+        except Exception as e:
+            logger.error(f"Error in general production scraping: {str(e)}", exc_info=True)
+            return {"data": [], "error": str(e), "source": "error"}
     
     def get_wine_production(self, year=None):
         """Get wine production data for a specific year."""
@@ -98,40 +300,10 @@ class ProductionScraper(BaseScraper):
                 'opcao': 'opt_02',
                 'subopcao': 'subopt_01'
             }
-            
-            if year:
-                params['ano'] = year
-                
-            soup = self._get_soup(self.BASE_URL, params)
-            df = self._extract_table_data(soup)
-            
-            # If web scraping fails, try CSV fallback
-            if df.empty:
-                logger.warning("Web scraping returned empty data for wine production, trying CSV fallback")
-                fallback_data = self._fallback_to_csv('production', 'wine', year)
-                if fallback_data and fallback_data.get("data"):
-                    logger.info("Successfully loaded wine data from CSV fallback")
-                    return fallback_data
-            
-            # Filter the data to include only wine categories
-            filtered_data = self._filter_data_by_category(df.to_dict('records'), category_type='wine')
-            
-            # Get the current year from the page if not specified
-            current_year = year or self._extract_current_year_from_page(soup)
-            
-            # Add year information to each data item
-            if current_year:
-                for item in filtered_data:
-                    item['Ano'] = current_year
-            
-            return {
-                "data": filtered_data,
-                "source": "web_scraping",
-                "source_url": self._get_source_url(params)
-            }
+            return self._get_production_data(params, 'wine', year)
         except Exception as e:
-            logger.error(f"Error in wine production scraping: {str(e)}")
-            return {"data": [], "error": str(e)}
+            logger.error(f"Error in wine production scraping: {str(e)}", exc_info=True)
+            return {"data": [], "error": str(e), "source": "error"}
     
     def get_grape_production(self, year=None):
         """Get grape production data for a specific year."""
@@ -140,40 +312,10 @@ class ProductionScraper(BaseScraper):
                 'opcao': 'opt_02',
                 'subopcao': 'subopt_02'
             }
-            
-            if year:
-                params['ano'] = year
-                
-            soup = self._get_soup(self.BASE_URL, params)
-            df = self._extract_table_data(soup)
-            
-            # If web scraping fails, try CSV fallback
-            if df.empty:
-                logger.warning("Web scraping returned empty data for grape production, trying CSV fallback")
-                fallback_data = self._fallback_to_csv('production', 'grape', year)
-                if fallback_data and fallback_data.get("data"):
-                    logger.info("Successfully loaded grape data from CSV fallback")
-                    return fallback_data
-            
-            # Filter the data to include only grape categories
-            filtered_data = self._filter_data_by_category(df.to_dict('records'), category_type='grape')
-            
-            # Get the current year from the page if not specified
-            current_year = year or self._extract_current_year_from_page(soup)
-            
-            # Add year information to each data item
-            if current_year:
-                for item in filtered_data:
-                    item['Ano'] = current_year
-            
-            return {
-                "data": filtered_data,
-                "source": "web_scraping",
-                "source_url": self._get_source_url(params)
-            }
+            return self._get_production_data(params, 'grape', year)
         except Exception as e:
-            logger.error(f"Error in grape production scraping: {str(e)}")
-            return {"data": [], "error": str(e)}
+            logger.error(f"Error in grape production scraping: {str(e)}", exc_info=True)
+            return {"data": [], "error": str(e), "source": "error"}
     
     def get_derivative_production(self, year=None):
         """Get derivative production data for a specific year."""
@@ -182,41 +324,11 @@ class ProductionScraper(BaseScraper):
                 'opcao': 'opt_02',
                 'subopcao': 'subopt_03'
             }
-            
-            if year:
-                params['ano'] = year
-                
-            soup = self._get_soup(self.BASE_URL, params)
-            df = self._extract_table_data(soup)
-            
-            # If web scraping fails, try CSV fallback
-            if df.empty:
-                logger.warning("Web scraping returned empty data for derivative production, trying CSV fallback")
-                fallback_data = self._fallback_to_csv('production', 'derivative', year)
-                if fallback_data and fallback_data.get("data"):
-                    logger.info("Successfully loaded derivative data from CSV fallback")
-                    return fallback_data
-            
-            # Filter the data to include only derivative categories
-            filtered_data = self._filter_data_by_category(df.to_dict('records'), category_type='derivative')
-            
-            # Get the current year from the page if not specified
-            current_year = year or self._extract_current_year_from_page(soup)
-            
-            # Add year information to each data item
-            if current_year:
-                for item in filtered_data:
-                    item['Ano'] = current_year
-            
-            return {
-                "data": filtered_data,
-                "source": "web_scraping",
-                "source_url": self._get_source_url(params)
-            }
+            return self._get_production_data(params, 'derivative', year)
         except Exception as e:
-            logger.error(f"Error in derivative production scraping: {str(e)}")
-            return {"data": [], "error": str(e)}
-    
+            logger.error(f"Error in derivative production scraping: {str(e)}", exc_info=True)
+            return {"data": [], "error": str(e), "source": "error"}
+
     def _filter_data_by_category(self, data, category_type):
         """
         Filter production data by category type.
@@ -404,6 +516,38 @@ class ProductionScraper(BaseScraper):
             logger.error(f"Error loading CSV data: {str(e)}", exc_info=True)
             return {"data": [], "error": str(e)}
 
+# Create unified response handling for all endpoints
+def build_api_response(data, year=None):
+    """Build standardized API response from scraped data"""
+    if not data or not isinstance(data, dict):
+        logger.warning("Invalid data format received")
+        raise HTTPException(
+            status_code=404,
+            detail=f"Dados não encontrados para o ano {year if year else 'atual'}"
+        )
+        
+    if "error" in data:
+        logger.error(f"Error in scraped data: {data['error']}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Erro ao processar dados: {data['error']}"
+        )
+        
+    if not data.get("data") or len(data.get("data", [])) == 0:
+        logger.warning(f"No data returned for year {year}")
+        raise HTTPException(
+            status_code=404,
+            detail=f"Dados não encontrados para o ano {year if year else 'atual'}"
+        )
+    
+    return {
+        "data": data.get("data", []),
+        "total": len(data.get("data", [])),
+        "ano_filtro": year,
+        "source_url": data.get("source_url", ""),
+        "source": data.get("source", "unknown")
+    }
+
 @router.get("/", summary="Dados gerais de produção")
 async def get_production_data(
     year: Optional[int] = Query(None, description="Ano de referência (ex: 2022)")
@@ -416,31 +560,12 @@ async def get_production_data(
         scraper = ProductionScraper()
         logger.info(f"Fetching production data for year: {year}")
         data = scraper.get_general_production(year)
-        
-        if data is None or (isinstance(data, dict) and "error" in data) or (
-            not data.get("data") or 
-            (isinstance(data.get("data"), list) and len(data.get("data", [])) == 0)
-        ):
-            logger.warning(f"No data returned for year {year}")
-            raise HTTPException(
-                status_code=404, 
-                detail=f"Dados não encontrados para o ano {year if year else 'atual'}"
-            )
-        
-        return {
-            "data": data.get("data", []),
-            "total": len(data.get("data", [])),
-            "ano_filtro": year,  # This is the year filter used
-            "source_url": data.get("source_url", ""),
-            "source": data.get("source", "unknown")
-        }
-    except HTTPException as e:
-        raise e
+        return build_api_response(data, year)
+    except HTTPException:
+        raise
     except Exception as e:
-        import traceback
         error_details = traceback.format_exc()
         logger.error(f"Error in production endpoint: {error_details}")
-        
         raise HTTPException(
             status_code=500, 
             detail=f"Erro ao obter dados de produção: {str(e)}"
@@ -457,31 +582,12 @@ async def get_wine_production(
         scraper = ProductionScraper()
         logger.info(f"Fetching wine production data for year: {year}")
         data = scraper.get_wine_production(year)
-        
-        if data is None or (isinstance(data, dict) and "error" in data) or (
-            not data.get("data") or 
-            (isinstance(data.get("data"), list) and len(data.get("data", [])) == 0)
-        ):
-            logger.warning(f"No wine data found for year {year}")
-            raise HTTPException(
-                status_code=404, 
-                detail=f"Dados não encontrados para o ano {year if year else 'atual'}"
-            )
-        
-        return {
-            "data": data.get("data", []),
-            "total": len(data.get("data", [])),
-            "ano_filtro": year,  # This is the year filter used
-            "source_url": data.get("source_url", ""),
-            "source": data.get("source", "unknown")
-        }
-    except HTTPException as e:
-        raise e
+        return build_api_response(data, year)
+    except HTTPException:
+        raise
     except Exception as e:
-        import traceback
         error_details = traceback.format_exc()
         logger.error(f"Error in wine production endpoint: {error_details}")
-        
         raise HTTPException(
             status_code=500, 
             detail=f"Erro ao obter dados de produção de vinhos: {str(e)}"
@@ -498,31 +604,12 @@ async def get_grape_production(
         scraper = ProductionScraper()
         logger.info(f"Fetching grape production data for year: {year}")
         data = scraper.get_grape_production(year)
-        
-        if data is None or (isinstance(data, dict) and "error" in data) or (
-            not data.get("data") or 
-            (isinstance(data.get("data"), list) and len(data.get("data", [])) == 0)
-        ):
-            logger.warning(f"No grape data found for year {year}")
-            raise HTTPException(
-                status_code=404, 
-                detail=f"Dados não encontrados para o ano {year if year else 'atual'}"
-            )
-        
-        return {
-            "data": data.get("data", []),
-            "total": len(data.get("data", [])),
-            "ano_filtro": year,  # This is the year filter used
-            "source_url": data.get("source_url", ""),
-            "source": data.get("source", "unknown")
-        }
-    except HTTPException as e:
-        raise e
+        return build_api_response(data, year)
+    except HTTPException:
+        raise
     except Exception as e:
-        import traceback
         error_details = traceback.format_exc()
         logger.error(f"Error in grape production endpoint: {error_details}")
-        
         raise HTTPException(
             status_code=500, 
             detail=f"Erro ao obter dados de produção de uvas: {str(e)}"
@@ -539,31 +626,12 @@ async def get_derivative_production(
         scraper = ProductionScraper()
         logger.info(f"Fetching derivative production data for year: {year}")
         data = scraper.get_derivative_production(year)
-        
-        if data is None or (isinstance(data, dict) and "error" in data) or (
-            not data.get("data") or 
-            (isinstance(data.get("data"), list) and len(data.get("data", [])) == 0)
-        ):
-            logger.warning(f"No derivative data found for year {year}")
-            raise HTTPException(
-                status_code=404, 
-                detail=f"Dados não encontrados para o ano {year if year else 'atual'}"
-            )
-        
-        return {
-            "data": data.get("data", []),
-            "total": len(data.get("data", [])),
-            "ano_filtro": year,  # This is the year filter used
-            "source_url": data.get("source_url", ""),
-            "source": data.get("source", "unknown")
-        }
-    except HTTPException as e:
-        raise e
+        return build_api_response(data, year)
+    except HTTPException:
+        raise
     except Exception as e:
-        import traceback
         error_details = traceback.format_exc()
         logger.error(f"Error in derivative production endpoint: {error_details}")
-        
         raise HTTPException(
             status_code=500, 
             detail=f"Erro ao obter dados de produção de derivados: {str(e)}"
