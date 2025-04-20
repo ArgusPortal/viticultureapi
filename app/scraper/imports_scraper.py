@@ -34,26 +34,30 @@ class ImportsScraper(BaseScraper):
             combined_data = []
             sources = set()
             
-            # Define subcategories to fetch
-            subcategories = [
-                self.get_wine_imports,
-                self.get_sparkling_imports, 
-                self.get_fresh_imports,
-                self.get_raisins_imports,
-                self.get_juice_imports
+            # Define subcategories to fetch with their category identifiers
+            subcategory_methods = [
+                {'method': self.get_wine_imports, 'category': 'vinhos'},
+                {'method': self.get_sparkling_imports, 'category': 'espumantes'},
+                {'method': self.get_fresh_imports, 'category': 'uvas-frescas'},
+                {'method': self.get_raisins_imports, 'category': 'passas'},
+                {'method': self.get_juice_imports, 'category': 'suco'}
             ]
             
             # Fetch and combine data from all subcategories
-            for subcategory_func in subcategories:
+            for subcat in subcategory_methods:
                 try:
-                    subcategory_data = subcategory_func(year)
+                    subcategory_data = subcat['method'](year)
                     if subcategory_data and "data" in subcategory_data and subcategory_data["data"]:
+                        # Add category identifier to each record
+                        for record in subcategory_data["data"]:
+                            record['categoria'] = subcat['category']
+                            
                         combined_data.extend(subcategory_data["data"])
                         if "source" in subcategory_data:
                             sources.add(subcategory_data["source"])
-                        logger.info(f"Added {len(subcategory_data['data'])} records from {subcategory_func.__name__}")
+                        logger.info(f"Added {len(subcategory_data['data'])} records from {subcat['category']}")
                 except Exception as e:
-                    logger.error(f"Error fetching data from {subcategory_func.__name__}: {str(e)}")
+                    logger.error(f"Error fetching data from {subcat['category']}: {str(e)}")
             
             # Return combined data
             if combined_data:

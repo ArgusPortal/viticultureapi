@@ -45,12 +45,50 @@ def build_api_response(data, year=None):
         "source": data.get("source", "unknown")
     }
 
-@router.get("/", summary="Dados de Importação")
-async def get_import_data(
-    year: Optional[int] = Query(None, description="Ano de referência (ex: 2022)")
+@router.get("/", 
+    summary="Dados de Importação",
+    response_description="Dados combinados de importação de todas as categorias")
+async def get_imports_data(
+    year: Optional[int] = Query(None, 
+                             description="Ano de referência dos dados", 
+                             example=2022,
+                             ge=1970, 
+                             le=2023)
 ):
     """
-    Retorna dados gerais sobre importação de produtos vitivinícolas, com possibilidade de filtrar por ano.
+    Retorna dados agregados de importação de todas as categorias de produtos.
+    
+    ## Descrição
+    
+    Este endpoint combina dados de importação de todos os tipos de produtos vitivinícolas 
+    disponíveis no site VitiBrasil, incluindo vinhos, espumantes, uvas frescas, uvas passas
+    e suco de uva. É útil para obter uma visão geral completa das importações do setor
+    vitivinícola brasileiro.
+    
+    ## Categorias incluídas
+    
+    - **Vinhos**: Vinhos tintos, brancos e rosados de diversos países
+    - **Espumantes**: Vinhos espumantes e champanhes
+    - **Uvas frescas**: Uvas in natura para consumo
+    - **Uvas passas**: Uvas desidratadas para consumo
+    - **Suco de uva**: Incluindo integral, concentrado e reconstituído
+    
+    ## Parâmetros
+    
+    - **year**: Opcional. Filtra os dados para mostrar apenas o ano especificado.
+                Se não for fornecido, retorna dados de todos os anos disponíveis.
+    
+    ## Dados retornados
+    
+    Cada registro contém informações sobre o país de origem, quantidade importada, 
+    valor em dólares e um identificador de categoria que permite saber a qual tipo de 
+    produto o registro se refere.
+    
+    ## Metodologia
+    
+    Os dados são obtidos combinando as informações de diversos sub-endpoints, garantindo
+    que mesmo quando o endpoint principal de importações apresenta problemas, os dados
+    possam ser recuperados de fontes alternativas.
     """
     try:
         scraper = ImportsScraper()

@@ -37,33 +37,87 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+tags_metadata = [
+    {
+        "name": "Produção",
+        "description": "Dados de produção de uvas, vinhos e derivados no Brasil.",
+    },
+    {
+        "name": "Processamento",
+        "description": "Dados de processamento industrial de uvas, separados por categoria (viníferas, americanas, etc.)."
+    },
+    {
+        "name": "Importação",
+        "description": "Estatísticas de importação de produtos vitivinícolas por tipo e país de origem."
+    },
+    {
+        "name": "Exportação",
+        "description": "Estatísticas de exportação de produtos vitivinícolas por tipo e país de destino."
+    },
+    {
+        "name": "Comercialização",
+        "description": "Dados de comercialização no mercado interno brasileiro."
+    },
+    {
+        "name": "Autenticação",
+        "description": "Endpoints para autenticação e gerenciamento de tokens."
+    }
+]
+
 app = FastAPI(
-    title=settings.PROJECT_NAME,
+    title="VitiBrasil API",
     openapi_url=f"{settings.API_V1_STR}/openapi.json",
     docs_url="/docs",
     description="""
-    API para acesso aos dados de vitivinicultura da Embrapa.
+    # API para acesso aos dados de vitivinicultura da Embrapa
+    
+    ## Sobre o Projeto Acadêmico
+    
+    Esta API foi desenvolvida como parte de um trabalho acadêmico para facilitar o acesso programático 
+    aos dados de vitivinicultura brasileira. O objetivo é disponibilizar informações estruturadas 
+    sobre a indústria vitivinícola nacional, permitindo análises e pesquisas mais eficientes.
     
     ## Funcionalidades
     
     * **Produção**: Dados sobre produção de uvas, vinhos e derivados
-    * **Processamento**: Informações sobre processamento industrial
+    * **Processamento**: Informações sobre processamento industrial de diferentes tipos de uvas
     * **Comercialização**: Dados de mercado interno
-    * **Importação**: Estatísticas de importação
-    * **Exportação**: Dados de exportação
+    * **Importação**: Estatísticas de importação por categoria (vinhos, espumantes, sucos, etc.)
+    * **Exportação**: Dados de exportação por categoria
     
     ## Fonte de Dados
     
-    Os dados são obtidos do site [VitiBrasil](http://vitibrasil.cnpuv.embrapa.br/) da Embrapa.
+    Os dados são obtidos do site [VitiBrasil](http://vitibrasil.cnpuv.embrapa.br/) da Embrapa Uva e Vinho.
+    As informações são coletadas através de web scraping e armazenadas em formatos acessíveis via API REST.
+    
+    ## Metodologia
+    
+    O projeto utiliza técnicas de web scraping para obter dados que anteriormente estavam disponíveis
+    apenas em formato HTML não-estruturado. Os desafios incluíram lidar com inconsistências na
+    formatação dos dados de origem e implementar mecanismos de fallback para garantir a disponibilidade
+    contínua das informações.
+    
+    ## Referências Bibliográficas
+    
+    - MELLO, L. M. R. de. Vitivinicultura brasileira: panorama 2019. Bento Gonçalves: Embrapa Uva e Vinho, 2020.
+    - IBRAVIN. Panorama da vitivinicultura brasileira. Bento Gonçalves: IBRAVIN, 2022.
     """,
     version="1.0.0",
     contact={
         "name": "Seu Nome",
         "email": "seu.email@exemplo.com",
+        "url": "https://github.com/seu-usuario/viticultureapi"
     },
     license_info={
         "name": "MIT",
+        "url": "https://opensource.org/licenses/MIT"
     },
+    swagger_ui_parameters={
+        "tagsSorter": "alpha",
+        "operationsSorter": "method",
+        "docExpansion": "none"
+    },
+    terms_of_service="http://example.com/terms/",
 )
 
 # Configurar CORS

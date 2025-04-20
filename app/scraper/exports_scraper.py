@@ -1,8 +1,6 @@
 from app.scraper.base_scraper import BaseScraper
 import pandas as pd
 import logging
-import os
-import re
 from datetime import datetime
 from bs4 import BeautifulSoup  # Add missing import
 
@@ -11,7 +9,7 @@ logger = logging.getLogger(__name__)
 class ExportsScraper(BaseScraper):
     def get_exports_data(self, year=None):
         """
-        Get exports data for a specific year or for all available years.
+        Get combined exports data from all subcategories for a specific year or all years.
         
         Args:
             year: Optional year to filter data
@@ -20,12 +18,51 @@ class ExportsScraper(BaseScraper):
             Dict with fetched data
         """
         try:
-            params = {
-                'opcao': 'opt_06',  # IMPORTANT: Exports option is opt_06
-                'subopcao': 'subopt_00'  # All exports
-            }
+            # First, try CSV fallback which is most reliable for aggregate data
+            fallback_data = self._fallback_to_csv('exports', None, year)
+            if fallback_data and fallback_data.get("data") and len(fallback_data.get("data", [])) > 0:
+                logger.info(f"Using CSV fallback for all exports data")
+                return fallback_data
             
-            return self._get_exports_data(params, None, year)
+            # Get data from individual subcategories
+            combined_data = []
+            sources = set()
+            
+            # Define subcategories to fetch with their category identifiers
+            subcategory_methods = [
+                {'method': self.get_wine_exports, 'category': 'vinhos'},
+                {'method': self.get_sparkling_exports, 'category': 'espumantes'},
+                {'method': self.get_fresh_exports, 'category': 'uvas-frescas'},
+                {'method': self.get_juice_exports, 'category': 'suco'}
+            ]
+            
+            # Fetch and combine data from all subcategories
+            for subcat in subcategory_methods:
+                try:
+                    subcategory_data = subcat['method'](year)
+                    if subcategory_data and "data" in subcategory_data and subcategory_data["data"]:
+                        # Add category identifier to each record
+                        for record in subcategory_data["data"]:
+                            record['categoria'] = subcat['category']
+                            
+                        combined_data.extend(subcategory_data["data"])
+                        if "source" in subcategory_data:
+                            sources.add(subcategory_data["source"])
+                        logger.info(f"Added {len(subcategory_data['data'])} records from {subcat['category']}")
+                except Exception as e:
+                    logger.error(f"Error fetching data from {subcat['category']}: {str(e)}")
+            
+            # Return combined data
+            if combined_data:
+                return {
+                    "data": combined_data,
+                    "source": "+".join(sources) if sources else "combined_exports",
+                    "source_url": f"{self.BASE_URL}?opcao=opt_06"
+                }
+            
+            # If we couldn't get any data, return empty result
+            logger.warning("No export data could be retrieved from any subcategory")
+            return {"data": [], "source": "no_data_found", "source_url": f"{self.BASE_URL}?opcao=opt_06"}
         except Exception as e:
             logger.error(f"Error in exports scraping: {str(e)}", exc_info=True)
             return {"data": [], "error": str(e), "source": "error"}

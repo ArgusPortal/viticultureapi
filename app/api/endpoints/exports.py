@@ -39,12 +39,43 @@ def build_api_response(data, year=None):
         "source": data.get("source", "unknown")
     }
 
-@router.get("/", summary="Dados de Exportação")
-async def get_export_data(
-    year: Optional[int] = Query(None, description="Ano de referência (ex: 2022)")
+@router.get("/", 
+    summary="Dados de Exportação", 
+    response_description="Dados combinados de exportação de todas as categorias")
+async def get_exports_data(
+    year: Optional[int] = Query(None, 
+                             description="Ano de referência dos dados (ex: 2022)", 
+                             example=2022,
+                             ge=1970, 
+                             le=2023)
 ):
     """
-    Retorna dados gerais sobre exportação de produtos vitivinícolas, com possibilidade de filtrar por ano.
+    Retorna dados agregados de exportação de todas as categorias de produtos.
+    
+    ## Descrição
+    
+    Este endpoint combina dados de exportação de todos os tipos de produtos vitivinícolas 
+    disponíveis no site VitiBrasil, incluindo vinhos de mesa, espumantes, uvas frescas e 
+    suco de uva. É útil para obter uma visão geral completa das exportações do setor
+    vitivinícola brasileiro.
+    
+    ## Categorias incluídas
+    
+    - **Vinhos de mesa**: Vinhos tintos, brancos e rosados
+    - **Espumantes**: Vinhos espumantes e frisantes
+    - **Uvas frescas**: Uvas in natura para consumo
+    - **Suco de uva**: Incluindo integral, concentrado e reconstituído
+    
+    ## Parâmetros
+    
+    - **year**: Opcional. Filtra os dados para mostrar apenas o ano especificado.
+                Se não for fornecido, retorna dados de todos os anos disponíveis.
+    
+    ## Dados retornados
+    
+    Cada registro contém informações sobre o país de destino, quantidade exportada, 
+    valor em dólares e um identificador de categoria que permite saber a qual tipo de 
+    produto o registro se refere.
     """
     try:
         scraper = ExportsScraper()
