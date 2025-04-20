@@ -1,8 +1,9 @@
-from fastapi import APIRouter, HTTPException, Query
-from typing import Optional
+from fastapi import APIRouter, HTTPException, Query, Response, status
+from typing import Optional, Dict, Any, List
 from app.scraper.imports_scraper import ImportsScraper
 import logging
 import traceback
+import json
 
 logger = logging.getLogger(__name__)
 
@@ -26,10 +27,15 @@ def build_api_response(data, year=None):
         
     if not data.get("data") or len(data.get("data", [])) == 0:
         logger.warning(f"No data returned for year {year}")
-        raise HTTPException(
-            status_code=404,
-            detail=f"Dados não encontrados para o ano {year if year else 'atual'}"
-        )
+        # Instead of 404, return empty data with status 200
+        return {
+            "data": [],
+            "total": 0,
+            "ano_filtro": year,
+            "source_url": data.get("source_url", ""),
+            "source": "no_data",
+            "message": f"Não foram encontrados dados para o ano {year if year else 'atual'}"
+        }
     
     return {
         "data": data.get("data", []),
@@ -39,7 +45,7 @@ def build_api_response(data, year=None):
         "source": data.get("source", "unknown")
     }
 
-@router.get("/", summary="Dados de importação")
+@router.get("/", summary="Dados de Importação")
 async def get_import_data(
     year: Optional[int] = Query(None, description="Ano de referência (ex: 2022)")
 ):
@@ -61,7 +67,7 @@ async def get_import_data(
             detail=f"Erro ao obter dados de importação: {str(e)}"
         )
 
-@router.get("/wine", summary="Dados de importação de vinhos")
+@router.get("/vinhos", summary="Dados de Importação de Vinhos")
 async def get_wine_import_data(
     year: Optional[int] = Query(None, description="Ano de referência (ex: 2022)")
 ):
@@ -83,7 +89,7 @@ async def get_wine_import_data(
             detail=f"Erro ao obter dados de importação de vinhos: {str(e)}"
         )
 
-@router.get("/fresh", summary="Dados de importação de uvas frescas")
+@router.get("/uvas-frescas", summary="Dados de Importação de Uvas Frescas")
 async def get_fresh_import_data(
     year: Optional[int] = Query(None, description="Ano de referência (ex: 2022)")
 ):
@@ -105,16 +111,16 @@ async def get_fresh_import_data(
             detail=f"Erro ao obter dados de importação de uvas frescas: {str(e)}"
         )
 
-@router.get("/juice", summary="Dados de importação de sucos")
+@router.get("/suco", summary="Dados de Importação de Suco de Uva")
 async def get_juice_import_data(
     year: Optional[int] = Query(None, description="Ano de referência (ex: 2022)")
 ):
     """
-    Retorna dados sobre importação de sucos, com possibilidade de filtrar por ano.
+    Retorna dados sobre importação de suco de uva, com possibilidade de filtrar por ano.
     """
     try:
         scraper = ImportsScraper()
-        logger.info(f"Fetching juice import data for year: {year}")
+        logger.info(f"Fetching grape juice import data for year: {year}")
         data = scraper.get_juice_imports(year)
         return build_api_response(data, year)
     except HTTPException:
@@ -124,10 +130,10 @@ async def get_juice_import_data(
         logger.error(f"Error in juice imports endpoint: {error_details}")
         raise HTTPException(
             status_code=500, 
-            detail=f"Erro ao obter dados de importação de sucos: {str(e)}"
+            detail=f"Erro ao obter dados de importação de suco de uva: {str(e)}"
         )
 
-@router.get("/sparkling", summary="Dados de importação de espumantes")
+@router.get("/espumantes", summary="Dados de Importação de Espumantes")
 async def get_sparkling_import_data(
     year: Optional[int] = Query(None, description="Ano de referência (ex: 2022)")
 ):
@@ -136,7 +142,7 @@ async def get_sparkling_import_data(
     """
     try:
         scraper = ImportsScraper()
-        logger.info(f"Fetching sparkling import data for year: {year}")
+        logger.info(f"Fetching sparkling wine import data for year: {year}")
         data = scraper.get_sparkling_imports(year)
         return build_api_response(data, year)
     except HTTPException:
@@ -149,12 +155,12 @@ async def get_sparkling_import_data(
             detail=f"Erro ao obter dados de importação de espumantes: {str(e)}"
         )
 
-@router.get("/raisins", summary="Dados de importação de passas")
+@router.get("/passas", summary="Dados de Importação de Uvas Passas")
 async def get_raisins_import_data(
     year: Optional[int] = Query(None, description="Ano de referência (ex: 2022)")
 ):
     """
-    Retorna dados sobre importação de passas, com possibilidade de filtrar por ano.
+    Retorna dados sobre importação de uvas passas, com possibilidade de filtrar por ano.
     """
     try:
         scraper = ImportsScraper()
@@ -168,5 +174,5 @@ async def get_raisins_import_data(
         logger.error(f"Error in raisins imports endpoint: {error_details}")
         raise HTTPException(
             status_code=500, 
-            detail=f"Erro ao obter dados de importação de passas: {str(e)}"
+            detail=f"Erro ao obter dados de importação de uvas passas: {str(e)}"
         )

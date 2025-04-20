@@ -6,6 +6,7 @@ import os
 import re
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
+from collections import Counter
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +26,16 @@ class BaseScraper:
             status_forcelist=[500, 502, 503, 504]
         )
         self.session.mount('http://', HTTPAdapter(max_retries=retry_strategy))
+    
+    def _safe_find_all(self, element, *args, **kwargs):
+        """Safely call find_all with error handling"""
+        try:
+            if element is None:
+                return []
+            return element.find_all(*args, **kwargs)
+        except Exception as e:
+            logger.error(f"Error in find_all: {str(e)}")
+            return []
     
     def _get_fallback_years(self):
         """Return a fixed range of years based on the known data range (1970-2023)"""
@@ -81,7 +92,7 @@ class BaseScraper:
                 # Safer way to check for options
                 try:
                     # Get all option elements directly using regex
-                    option_elements = soup.find_all('option')
+                    option_elements = self._safe_find_all(soup, 'option')
                     if option_elements:
                         for option in option_elements:
                             year_text = option.text.strip() if hasattr(option, 'text') else ""
@@ -136,7 +147,7 @@ class BaseScraper:
     
     def _extract_table_data(self, soup):
         """
-        Extracts table data from the soup.
+        Improved table data extraction with better error handling and validation.
         
         Args:
             soup (BeautifulSoup): Parsed HTML
@@ -149,205 +160,208 @@ class BaseScraper:
             return pd.DataFrame()
             
         try:
-            # Dump the first few tables for debugging
-            tables = soup.find_all('table', limit=5)
+            # Find all tables
+            tables = self._safe_find_all(soup, 'table')
             logger.info(f"Found {len(tables)} tables in the page")
             
-            for i, table in enumerate(tables):
-                logger.debug(f"Table {i} structure: {table.prettify()[:300]}...")
-            
-            # Filter out tables that likely contain author information
-            data_tables = []
-            for table in tables:
-                text = table.get_text().lower()
-                # Skip tables that appear to be author info, navigation, or other non-data
-                if any(term in text for term in ['loiva maria', 'carlos alberto', 'copyright', 'menu', 'navigation']):
-                    logger.info(f"Skipping likely non-data table: {text[:50]}...")
-                    continue
-                data_tables.append(table)
-            
-            if not data_tables:
-                logger.warning("No data tables found on the page")
+            if not tables:
+                logger.warning("No tables found in the page")
                 return pd.DataFrame()
+                
+            # Select the best table using a scoring approach
+            best_table, best_score = None, -1
             
-            # Try to find the best table with actual data
-            main_table = None
-            max_rows = 0
+            for idx, table in enumerate(tables):
+                # Skip tiny tables (likely navigation)
+                rows = self._safe_find_all(table, 'tr')
+                if len(rows) < 3:
+                    continue
+                    
+                # Calculate a score for how likely this is to be a data table
+                score = self._calculate_table_score(table)
+                logger.debug(f"Table {idx}: score={score}, rows={len(rows)}")
+                
+                if score > best_score:
+                    best_score = score
+                    best_table = table
             
-            for table in data_tables:
-                rows = table.find_all('tr')
-                if len(rows) > max_rows:
-                    max_rows = len(rows)
-                    main_table = table
-            
-            if not main_table:
-                # If no good candidates, fall back to original method
-                for selector in ['table.tabDados', 'table.tabelaDados', 'table.table', 'table']:
-                    main_table = soup.select_one(selector)
-                    if main_table:
-                        # Skip tables with author information
-                        if 'loiva maria' in main_table.get_text().lower() or 'carlos alberto' in main_table.get_text().lower():
-                            logger.info(f"Skipping author info table found with selector: {selector}")
-                            continue
-                        logger.info(f"Found table with selector: {selector}")
-                        break
-            
-            if not main_table:
+            if not best_table:
                 logger.warning("No suitable data table found on the page")
                 return pd.DataFrame()
-            
-            # Try multiple header detection methods
-            headers = []
-            
-            # Method 1: Look for th elements in the first row
-            header_row = main_table.select_one('tr:first-child')
-            if header_row:
-                th_elements = header_row.find_all('th')
-                if th_elements:
-                    headers = [th.get_text(strip=True) for th in th_elements]
-                    # Check if these are real headers or just formatting
-                    if any(len(h) < 1 for h in headers) or any(h.lower() in ['loiva', 'carlos', 'embrapa'] for h in headers):
-                        logger.info("First row contains likely non-header th elements, trying other methods")
-                        headers = []
-            
-            # Method 2: Look for th elements with tabTitulo class
-            if not headers:
-                th_elements = main_table.select('tr.tabTitulo th')
-                if th_elements:
-                    headers = [th.get_text(strip=True) for th in th_elements]
-            
-            # Method 3: Look for the first row with td elements that might be headers
-            if not headers:
-                first_row = main_table.select_one('tr:first-child')
-                if first_row:
-                    td_elements = first_row.find_all('td')
-                    headers_candidate = [td.get_text(strip=True) for td in td_elements]
-                    # Make sure these are real headers, not author info or empty cells
-                    if all(len(h) > 0 for h in headers_candidate) and not any(name.lower() in ' '.join(headers_candidate).lower() for name in ['loiva', 'carlos', 'embrapa']):
-                        headers = headers_candidate
-                    else:
-                        logger.info("First row td elements don't appear to be real headers")
-            
-            # Method 4: Look for any elements with bold or strong formatting
-            if not headers:
-                bold_cells = main_table.select('tr:first-child td b') or main_table.select('tr:first-child td strong')
-                if bold_cells:
-                    headers = [cell.get_text(strip=True) for cell in bold_cells]
-            
-            # Method 5: If still no headers, use CSV fallback header names if possible for this data type
-            if not headers or len(set(headers)) < len(headers):  # Check for duplicate headers
-                # Look for possible headers in the body of the table
-                potential_headers = []
-                rows = main_table.find_all('tr')
-                if len(rows) > 1:  # Skip header row
-                    for row in rows[1:3]:  # Check the first couple of data rows
-                        cells = row.find_all(['td', 'th'])
-                        if cells and len(cells) > 2:  # Only consider rows with enough columns
-                            first_cell_text = cells[0].get_text(strip=True)
-                            # If first cell looks like a header/category
-                            if first_cell_text and not first_cell_text.isdigit() and len(first_cell_text) > 1:
-                                potential_headers.append(first_cell_text)
                 
-                if potential_headers:
-                    logger.info(f"Using data row text as column indicators: {potential_headers[:3]}...")
-                    # Create generic headers but with counts
-                    col_count = max([len(row.find_all(['td', 'th'])) for row in rows])
-                    headers = ['Index'] + [f"Column{i+1}" for i in range(col_count-1)]
-                else:
-                    # Method 6: If all else fails, create generic headers based on max column count
-                    col_count = max([len(row.find_all(['td', 'th'])) for row in rows])
-                    if col_count > 0:
-                        headers = [f"Column{i+1}" for i in range(col_count)]
-                        logger.warning(f"Using generic headers: {headers}")
-                    
+            # Extract headers using multiple strategies
+            headers = self._extract_table_headers(best_table)
+            
             if not headers:
-                logger.warning("Cabeçalhos da tabela não encontrados")
+                logger.warning("Could not determine table headers")
                 return pd.DataFrame()
                 
-            logger.info(f"Found headers: {headers}")
+            # Make headers unique
+            headers = self._ensure_unique_headers(headers)
+            logger.info(f"Using headers: {headers}")
             
-            # Ensure header uniqueness
-            if len(set(headers)) < len(headers):
-                unique_headers = []
-                seen = set()
-                for header in headers:
-                    if header in seen:
-                        count = 1
-                        while f"{header}_{count}" in seen:
-                            count += 1
-                        unique_headers.append(f"{header}_{count}")
-                        seen.add(f"{header}_{count}")
-                    else:
-                        unique_headers.append(header)
-                        seen.add(header)
-                
-                logger.warning(f"Fixed duplicate headers. Original: {headers}, New: {unique_headers}")
-                headers = unique_headers
-                
-            # Extract rows - skip the first row if it contains headers
-            rows = []
-            start_idx = 1 if main_table.select_one('tr:first-child th') or (len(main_table.find_all('tr')) > 0 and len(headers) > 0) else 0
+            # Extract data rows with validation
+            rows_data = self._extract_table_rows(best_table, headers)
             
-            # Make sure we have the right number of headers for the data we'll extract
-            row_cells = []
-            for row in main_table.find_all('tr')[start_idx:]:
-                cells = [td.get_text(strip=True) for td in row.find_all(['td', 'th'])]
-                if cells and len(cells) > 1:  # Skip empty or near-empty rows
-                    row_cells.append(cells)
-            
-            # If we found cells but they have different lengths than the headers, adjust headers
-            if row_cells and all(len(cells) != len(headers) for cells in row_cells[:3]):
-                max_len = max([len(cells) for cells in row_cells])
-                if max_len > 0:
-                    logger.warning(f"Adjusting headers from {len(headers)} to {max_len} columns based on data")
-                    headers = [f"Column{i+1}" for i in range(max_len)]
-            
-            # Now process rows for extraction
-            for row in main_table.find_all('tr')[start_idx:]:
-                cells = [td.get_text(strip=True) for td in row.find_all(['td', 'th'])]
-                if not cells:
-                    continue
-                
-                # Skip rows that appear to be author information or other non-data
-                if any('loiva maria' in cell.lower() or 'carlos alberto' in cell.lower() for cell in cells):
-                    logger.info(f"Skipping author info row: {cells}")
-                    continue
-                
-                # Fill or trim cells to match header count
-                if len(cells) < len(headers):
-                    cells = cells + [''] * (len(headers) - len(cells))
-                elif len(cells) > len(headers):
-                    cells = cells[:len(headers)]
-                    
-                rows.append(cells)
-                    
-            if not rows:
+            if not rows_data:
                 logger.warning("No data rows found in table")
                 return pd.DataFrame()
                 
-            # Create DataFrame
-            df = pd.DataFrame(rows, columns=headers)
+            # Create DataFrame and clean numeric columns
+            df = pd.DataFrame(rows_data, columns=headers)
+            df = self._clean_numeric_columns(df)
+            
             logger.info(f"Extracted {len(df)} rows of data")
-            
-            # Identify and remove rows that don't appear to be data (headers, footers, etc.)
-            if len(df) > 2:  # Only clean if we have enough rows
-                # Drop rows that are mostly empty
-                empty_threshold = 0.7  # Drop if more than 70% of cells are empty
-                df = df.dropna(thresh=int(len(df.columns) * (1 - empty_threshold)))
-                
-                # If there are year columns, make sure values are numeric where expected
-                year_cols = [col for col in df.columns if any(year_term in col.lower() for year_term in ['ano', 'year', '20', '19'])]
-                if year_cols and len(df) > 0:
-                    for col in year_cols:
-                        # Try to convert to numeric, coercing errors to NaN
-                        pd.to_numeric(df[col], errors='coerce')
-                
-                logger.info(f"After cleaning: {len(df)} rows of data")
-            
             return df
         except Exception as e:
             logger.error(f"Error extracting table data: {str(e)}", exc_info=True)
             return pd.DataFrame()
+
+    def _calculate_table_score(self, table):
+        """Calculate a score for how likely a table is to contain data"""
+        score = 0
+        
+        # Tables with more rows are likely data tables
+        rows = self._safe_find_all(table, 'tr')
+        score += len(rows) * 2
+        
+        # Tables with th elements are likely data tables
+        ths = self._safe_find_all(table, 'th')
+        score += len(ths) * 3
+        
+        # Tables with numeric values are likely data tables
+        text = table.get_text()
+        
+        # Check for patterns that look like numbers with thousand separators
+        if re.search(r'\d{1,3}(\.\d{3})+', text):
+            score += 10
+            
+        # Tables with country names or product names are likely data tables
+        text_lower = text.lower()
+        if any(country in text_lower for country in ['brasil', 'argentina', 'chile', 'uruguai']):
+            score += 5
+        if any(product in text_lower for product in ['vinho', 'uva', 'suco', 'espumante']):
+            score += 5
+            
+        return score
+
+    def _extract_table_headers(self, table):
+        """Extract headers from table using multiple strategies"""
+        # Strategy 1: Find th elements
+        th_elements = self._safe_find_all(table, 'th')
+        if th_elements:
+            headers = [th.get_text(strip=True) for th in th_elements]
+            if all(len(h) > 0 for h in headers):
+                return headers
+        
+        # Strategy 2: Use first row
+        first_row = table.find('tr')
+        if first_row:
+            cells = self._safe_find_all(first_row, ['td', 'th'])
+            headers = [cell.get_text(strip=True) for cell in cells]
+            if all(len(h) > 0 for h in headers):
+                return headers
+        
+        # Strategy 3: Look for rows with header-like content
+        for row in self._safe_find_all(table, 'tr')[:3]:  # Check first 3 rows
+            cells = self._safe_find_all(row, ['td', 'th'])
+            cell_texts = [cell.get_text(strip=True) for cell in cells]
+            
+            # Check if this row has header-like content
+            if any(keyword in ' '.join(cell_texts).lower() for keyword in 
+                  ['país', 'pais', 'produto', 'quantidade', 'valor']):
+                return cell_texts
+        
+        # Strategy 4: Infer headers from table structure
+        rows = self._safe_find_all(table, 'tr')
+        if rows:
+            # Find most common cell count
+            cell_counts = [len(self._safe_find_all(row, ['td', 'th'])) for row in rows]
+            if cell_counts:
+                most_common = Counter(cell_counts).most_common(1)[0][0]
+                
+                # Default import/export headers
+                if most_common >= 3:
+                    return ['País', 'Quantidade (Kg)', 'Valor (US$)'][:most_common]
+                else:
+                    return [f"Column{i+1}" for i in range(most_common)]
+        
+        return []
+
+    def _ensure_unique_headers(self, headers):
+        """Make sure headers are unique by appending numbers if needed"""
+        if len(set(headers)) == len(headers):
+            return headers
+            
+        unique_headers = []
+        seen = set()
+        
+        for header in headers:
+            if header in seen:
+                i = 1
+                while f"{header}_{i}" in seen:
+                    i += 1
+                unique_headers.append(f"{header}_{i}")
+                seen.add(f"{header}_{i}")
+            else:
+                unique_headers.append(header)
+                seen.add(header)
+        
+        return unique_headers
+
+    def _extract_table_rows(self, table, headers):
+        """Extract table rows with validation and filtering"""
+        rows_data = []
+        header_row_found = False
+        
+        for row in self._safe_find_all(table, 'tr'):
+            cells = self._safe_find_all(row, ['td', 'th'])
+            cell_texts = [cell.get_text(strip=True) for cell in cells]
+            
+            # Skip rows that match headers (to avoid duplicate headers)
+            if set(cell_texts) == set(headers):
+                header_row_found = True
+                continue
+                
+            # Skip empty rows
+            if not cell_texts or all(not text for text in cell_texts):
+                continue
+                
+            # Skip navigation/control rows
+            if any(text in ['TOPO', 'DOWNLOAD', '«', '»', '‹', '›'] for text in cell_texts):
+                continue
+                
+            # Skip footer/copyright rows
+            if any('copyright' in text.lower() for text in cell_texts):
+                continue
+            if any('embrapa' in text.lower() for text in cell_texts):
+                continue
+                
+            # Make sure row has the right number of cells
+            if len(cell_texts) < len(headers):
+                # Pad with empty strings
+                cell_texts = cell_texts + [''] * (len(headers) - len(cell_texts))
+            elif len(cell_texts) > len(headers):
+                # Truncate
+                cell_texts = cell_texts[:len(headers)]
+                
+            rows_data.append(cell_texts)
+        
+        return rows_data
+
+    def _clean_numeric_columns(self, df):
+        """Clean numeric columns in the dataframe"""
+        for col in df.columns:
+            if any(term in col.lower() for term in ['quantidade', 'valor', 'kg', 'us$']):
+                try:
+                    # First replace thousand separators (dots)
+                    df[col] = df[col].astype(str).str.replace('.', '')
+                    # Then replace decimal separators (commas)
+                    df[col] = df[col].astype(str).str.replace(',', '.').astype(float)
+                except Exception as e:
+                    logger.warning(f"Could not convert column {col} to numeric: {str(e)}")
+        
+        return df
     
     def _fallback_to_csv(self, category, subcategory=None, year=None):
         """
@@ -416,7 +430,7 @@ class BaseScraper:
                     logger.warning(f"CSV file not found: {file_path}")
             else:
                 logger.warning(f"No CSV mapping for category: {category}, subcategory: {subcategory}")
-                
+            
             return {"data": [], "source": "local_csv_not_found"}
         except Exception as e:
             logger.error(f"Error loading CSV data: {str(e)}", exc_info=True)

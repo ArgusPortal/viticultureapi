@@ -15,6 +15,16 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 class ProductionScraper(BaseScraper):
+    def _safe_soup_find_all(self, soup, *args, **kwargs):
+        """Safely call find_all on a soup object with error handling"""
+        try:
+            if soup is None:
+                return []
+            return soup.find_all(*args, **kwargs)
+        except Exception as e:
+            logger.error(f"Error in soup.find_all: {str(e)}")
+            return []
+
     def _extract_current_year_from_page(self, soup):
         """
         Attempt to extract the current year from the page content.
@@ -38,7 +48,7 @@ class ProductionScraper(BaseScraper):
                         continue
         
         # If we couldn't find a year, check for any text that might contain a year
-        text_blocks = soup.find_all(['p', 'div', 'span'])
+        text_blocks = self._safe_soup_find_all(soup, ['p', 'div', 'span'])
         for block in text_blocks:
             if block and block.text:
                 year_match = re.search(r'20\d{2}', block.text)
@@ -111,7 +121,7 @@ class ProductionScraper(BaseScraper):
                 # Safer way to check for options
                 try:
                     # Get all option elements directly using regex
-                    option_elements = soup.find_all('option')
+                    option_elements = self._safe_soup_find_all(soup, 'option')
                     if option_elements:
                         for option in option_elements:
                             year_text = option.text.strip() if hasattr(option, 'text') else ""
