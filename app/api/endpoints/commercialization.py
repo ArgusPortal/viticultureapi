@@ -1,6 +1,7 @@
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Depends
 from typing import Optional
 from app.scraper.commercialization_scraper import CommercializationScraper
+from app.core.security import verify_token
 import logging
 import traceback
 
@@ -41,16 +42,19 @@ def build_api_response(data, year=None):
 
 @router.get("/", summary="Dados de comercialização")
 async def get_commercialization_data(
-    year: Optional[int] = Query(None, description="Ano de referência (ex: 2022)")
+    year: Optional[int] = Query(None, description="Ano de referência (ex: 2022)"),
+    current_user: str = Depends(verify_token)
 ):
     """
     Retrieve commercialization data for viticulture products.
+    
+    Este endpoint requer autenticação. O usuário precisa fornecer um token JWT válido no cabeçalho de autorização.
     
     Retorna dados sobre a comercialização de produtos vitivinícolas, com possibilidade de filtrar por ano.
     """
     try:
         scraper = CommercializationScraper()
-        logger.info(f"Fetching commercialization data for year: {year}")
+        logger.info(f"Fetching commercialization data for year: {year} - requested by user: {current_user}")
         data = scraper.get_commercialization_data(year)
         return build_api_response(data, year)
     except HTTPException:

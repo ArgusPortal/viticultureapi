@@ -277,9 +277,34 @@ O projeto continua em desenvolvimento, com planos para:
 - Adicionar visualizações integradas
 - Desenvolver um painel de administração
 
-## 9. Referências
+## 9. Atualizações Recentes
+
+### 9.1 Melhorias na Documentação Interativa
+
+- Substituição da interface Swagger UI personalizada (/custom-docs) pela interface padrão do FastAPI (/docs)
+- Correção de problemas de codificação UTF-8 em templates customizados
+- Otimização da renderização de Markdown na documentação da API
+- Simplificação da estrutura de arquivos estáticos
+
+### 9.2 Modelo de Autenticação
+
+A API adota um modelo de acesso aberto para promover o uso acadêmico e a democratização dos dados:
+
+- **Endpoints públicos**: Todos os endpoints de consulta de dados são públicos, sem necessidade de autenticação
+- **Infraestrutura de autenticação**: Sistema de autenticação OAuth2 implementado para uso futuro
+- **Controle de acesso**: Preparado para restringir operações administrativas ou de modificação quando necessário
+
+### 9.3 Outras Melhorias
+
+- Padronização do formato OpenAPI para versão 3.0.0
+- Tratamento de exceções melhorado com logging detalhado
+- Endpoint de diagnóstico (/debug/openapi) para verificação do schema OpenAPI
+- Configurações personalizadas de Swagger UI para melhor experiência do usuário
+
+## 10. Referências
 
 - [Embrapa VitiBrasil](http://vitibrasil.cnpuv.embrapa.br/)
 - [FastAPI Documentation](https://fastapi.tiangolo.com/)
 - [Beautiful Soup Documentation](https://www.crummy.com/software/BeautifulSoup/bs4/doc/)
+- [Swagger UI Documentation](https://swagger.io/tools/swagger-ui/)
 - https://excalidraw.com/#json=x1k7UaBZE6iPtxbXyFfkA,QZc81REYTBitIVDsFZ84XQ

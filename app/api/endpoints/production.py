@@ -1,13 +1,13 @@
 from fastapi import APIRouter, Query, HTTPException, Depends
-from typing import Optional, List, Dict, Any, Union
+from typing import Optional
 from app.scraper.base_scraper import BaseScraper
+from app.core.security import verify_token
 import pandas as pd
 import logging
 import os
 from urllib.parse import urlencode
 import re
 from datetime import datetime
-import requests
 import traceback
 
 logger = logging.getLogger(__name__)
@@ -560,7 +560,8 @@ def build_api_response(data, year=None):
 
 @router.get("/", summary="Dados gerais de produção")
 async def get_production_data(
-    year: Optional[int] = Query(None, description="Ano de referência (ex: 2022)")
+    year: Optional[int] = Query(None, description="Ano de referência (ex: 2022)"),
+    current_user: str = Depends(verify_token)
 ):
     """
     Retorna dados gerais sobre a produção vitivinícola, com possibilidade de filtrar por ano.
@@ -568,7 +569,7 @@ async def get_production_data(
     """
     try:
         scraper = ProductionScraper()
-        logger.info(f"Fetching production data for year: {year}")
+        logger.info(f"Fetching production data for year: {year} - requested by user: {current_user}")
         data = scraper.get_general_production(year)
         return build_api_response(data, year)
     except HTTPException:
@@ -583,14 +584,15 @@ async def get_production_data(
 
 @router.get("/wine", summary="Dados de produção de vinhos")
 async def get_wine_production(
-    year: Optional[int] = Query(None, description="Ano de referência (ex: 2022)")
+    year: Optional[int] = Query(None, description="Ano de referência (ex: 2022)"),
+    current_user: str = Depends(verify_token)
 ):
     """
     Retorna dados sobre a produção de vinhos, com possibilidade de filtrar por ano.
     """
     try:
         scraper = ProductionScraper()
-        logger.info(f"Fetching wine production data for year: {year}")
+        logger.info(f"Fetching wine production data for year: {year} - requested by user: {current_user}")
         data = scraper.get_wine_production(year)
         return build_api_response(data, year)
     except HTTPException:
@@ -605,14 +607,15 @@ async def get_wine_production(
 
 @router.get("/grape", summary="Dados de produção de uvas")
 async def get_grape_production(
-    year: Optional[int] = Query(None, description="Ano de referência (ex: 2022)")
+    year: Optional[int] = Query(None, description="Ano de referência (ex: 2022)"),
+    current_user: str = Depends(verify_token)
 ):
     """
     Retorna dados sobre a produção de uvas, com possibilidade de filtrar por ano.
     """
     try:
         scraper = ProductionScraper()
-        logger.info(f"Fetching grape production data for year: {year}")
+        logger.info(f"Fetching grape production data for year: {year} - requested by user: {current_user}")
         data = scraper.get_grape_production(year)
         return build_api_response(data, year)
     except HTTPException:
@@ -627,14 +630,15 @@ async def get_grape_production(
 
 @router.get("/derivative", summary="Dados de produção de derivados")
 async def get_derivative_production(
-    year: Optional[int] = Query(None, description="Ano de referência (ex: 2022)")
+    year: Optional[int] = Query(None, description="Ano de referência (ex: 2022)"),
+    current_user: str = Depends(verify_token)
 ):
     """
     Retorna dados sobre a produção de derivados da uva e do vinho, com possibilidade de filtrar por ano.
     """
     try:
         scraper = ProductionScraper()
-        logger.info(f"Fetching derivative production data for year: {year}")
+        logger.info(f"Fetching derivative production data for year: {year} - requested by user: {current_user}")
         data = scraper.get_derivative_production(year)
         return build_api_response(data, year)
     except HTTPException:

@@ -1,6 +1,7 @@
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Depends
 from typing import Optional
 from app.scraper.exports_scraper import ExportsScraper
+from app.core.security import verify_token
 import logging
 import traceback
 
@@ -47,7 +48,9 @@ async def get_exports_data(
                              description="Ano de referência dos dados (ex: 2022)", 
                              example=2022,
                              ge=1970, 
-                             le=2023)
+                             le=2023),
+    current_user: str = Depends(verify_token)
+
 ):
     """
     Retorna dados agregados de exportação de todas as categorias de produtos.
@@ -79,7 +82,7 @@ async def get_exports_data(
     """
     try:
         scraper = ExportsScraper()
-        logger.info(f"Fetching export data for year: {year}")
+        logger.info(f"Fetching export data for year: {year} - requested by user: {current_user}")
         data = scraper.get_exports_data(year)
         return build_api_response(data, year)
     except HTTPException:
@@ -94,14 +97,16 @@ async def get_exports_data(
 
 @router.get("/vinhos", summary="Dados de Exportação de Vinhos de Mesa")
 async def get_wine_export_data(
-    year: Optional[int] = Query(None, description="Ano de referência (ex: 2022)")
+    year: Optional[int] = Query(None, description="Ano de referência (ex: 2022)"),
+    current_user: str = Depends(verify_token)
+
 ):
     """
     Retorna dados sobre exportação de vinhos de mesa, com possibilidade de filtrar por ano.
     """
     try:
         scraper = ExportsScraper()
-        logger.info(f"Fetching wine export data for year: {year}")
+        logger.info(f"Fetching wine export data for year: {year} - requested by user: {current_user}")
         data = scraper.get_wine_exports(year)
         return build_api_response(data, year)
     except HTTPException:
@@ -116,14 +121,16 @@ async def get_wine_export_data(
 
 @router.get("/espumantes", summary="Dados de Exportação de Espumantes")
 async def get_sparkling_export_data(
-    year: Optional[int] = Query(None, description="Ano de referência (ex: 2022)")
+    year: Optional[int] = Query(None, description="Ano de referência (ex: 2022)"),
+    current_user: str = Depends(verify_token)
+
 ):
     """
     Retorna dados sobre exportação de espumantes, com possibilidade de filtrar por ano.
     """
     try:
         scraper = ExportsScraper()
-        logger.info(f"Fetching sparkling wine export data for year: {year}")
+        logger.info(f"Fetching sparkling wine export data for year: {year} - requested by user: {current_user}")
         data = scraper.get_sparkling_exports(year)
         return build_api_response(data, year)
     except HTTPException:
@@ -138,14 +145,16 @@ async def get_sparkling_export_data(
 
 @router.get("/uvas-frescas", summary="Dados de Exportação de Uvas Frescas")
 async def get_fresh_grape_export_data(
-    year: Optional[int] = Query(None, description="Ano de referência (ex: 2022)")
+    year: Optional[int] = Query(None, description="Ano de referência (ex: 2022)"),
+    current_user: str = Depends(verify_token)
+
 ):
     """
     Retorna dados sobre exportação de uvas frescas, com possibilidade de filtrar por ano.
     """
     try:
         scraper = ExportsScraper()
-        logger.info(f"Fetching fresh grape export data for year: {year}")
+        logger.info(f"Fetching fresh grape export data for year: {year} - requested by user: {current_user}")
         data = scraper.get_fresh_exports(year)
         return build_api_response(data, year)
     except HTTPException:
@@ -160,14 +169,16 @@ async def get_fresh_grape_export_data(
 
 @router.get("/suco", summary="Dados de Exportação de Suco de Uva")
 async def get_juice_export_data(
-    year: Optional[int] = Query(None, description="Ano de referência (ex: 2022)")
+    year: Optional[int] = Query(None, description="Ano de referência (ex: 2022)"),
+    current_user: str = Depends(verify_token)
+
 ):
     """
     Retorna dados sobre exportação de suco de uva, com possibilidade de filtrar por ano.
     """
     try:
         scraper = ExportsScraper()
-        logger.info(f"Fetching grape juice export data for year: {year}")
+        logger.info(f"Fetching grape juice export data for year: {year} - requested by user: {current_user}")
         data = scraper.get_juice_exports(year)
         return build_api_response(data, year)
     except HTTPException:

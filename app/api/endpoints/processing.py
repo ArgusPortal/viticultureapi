@@ -1,6 +1,7 @@
-from fastapi import APIRouter, HTTPException, Query, Path, status
-from typing import Optional, List, Dict, Any
+from fastapi import APIRouter, HTTPException, Query, Depends, status
+from typing import Optional
 from app.scraper.processing_scraper import ProcessingScraper
+from app.core.security import verify_token
 import logging
 import traceback
 from enum import Enum
@@ -76,7 +77,8 @@ async def get_processing_data(
                               description="Ano de referência dos dados", 
                               example=2022,
                               ge=1970, 
-                              le=2023)
+                              le=2023),
+    current_user: str = Depends(verify_token)
 ):
     """
     Retorna dados agregados de processamento de uvas de todas as categorias.
@@ -106,7 +108,7 @@ async def get_processing_data(
     """
     try:
         scraper = ProcessingScraper()
-        logger.info(f"Fetching combined processing data for year: {year}")
+        logger.info(f"Fetching combined processing data for year: {year} - requested by user: {current_user}")
         data = scraper.get_processing_data(year)
         
         # Use the standard response builder
@@ -129,7 +131,8 @@ async def get_vinifera_processing_data(
                               description="Ano de referência dos dados", 
                               example=2022,
                               ge=1970, 
-                              le=2023)
+                              le=2023),
+    current_user: str = Depends(verify_token)
 ):
     """
     Retorna dados sobre o processamento de uvas viníferas, com possibilidade de filtrar por ano.
@@ -147,7 +150,7 @@ async def get_vinifera_processing_data(
     """
     try:
         scraper = ProcessingScraper()
-        logger.info(f"Fetching vinifera grape processing data for year: {year}")
+        logger.info(f"Fetching vinifera grape processing data for year: {year} - requested by user: {current_user}")
         data = scraper.get_vinifera_processing(year)
         return build_api_response(data, year)
     except HTTPException:
@@ -168,7 +171,8 @@ async def get_american_processing_data(
                               description="Ano de referência dos dados", 
                               example=2022,
                               ge=1970, 
-                              le=2023)
+                              le=2023),
+    current_user: str = Depends(verify_token)
 ):
     """
     Retorna dados sobre o processamento de uvas americanas e híbridas, com possibilidade de filtrar por ano.
@@ -186,7 +190,7 @@ async def get_american_processing_data(
     """
     try:
         scraper = ProcessingScraper()
-        logger.info(f"Fetching American grape processing data for year: {year}")
+        logger.info(f"Fetching American grape processing data for year: {year} - requested by user: {current_user}")
         data = scraper.get_american_processing(year)
         return build_api_response(data, year)
     except HTTPException:
@@ -207,7 +211,8 @@ async def get_table_processing_data(
                               description="Ano de referência dos dados", 
                               example=2022,
                               ge=1970, 
-                              le=2023)
+                              le=2023),
+    current_user: str = Depends(verify_token)
 ):
     """
     Retorna dados sobre o processamento de uvas de mesa, com possibilidade de filtrar por ano.
@@ -225,7 +230,7 @@ async def get_table_processing_data(
     """
     try:
         scraper = ProcessingScraper()
-        logger.info(f"Fetching table grape processing data for year: {year}")
+        logger.info(f"Fetching table grape processing data for year: {year} - requested by user: {current_user}")
         data = scraper.get_table_processing(year)
         return build_api_response(data, year)
     except HTTPException:
@@ -246,7 +251,8 @@ async def get_unclassified_processing_data(
                               description="Ano de referência dos dados", 
                               example=2022,
                               ge=1970, 
-                              le=2023)
+                              le=2023),
+    current_user: str = Depends(verify_token)
 ):
     """
     Retorna dados sobre o processamento de uvas sem classificação, com possibilidade de filtrar por ano.
@@ -264,7 +270,7 @@ async def get_unclassified_processing_data(
     """
     try:
         scraper = ProcessingScraper()
-        logger.info(f"Fetching unclassified grape processing data for year: {year}")
+        logger.info(f"Fetching unclassified grape processing data for year: {year} - requested by user: {current_user}")
         data = scraper.get_unclassified_processing(year)
         return build_api_response(data, year)
     except HTTPException:
