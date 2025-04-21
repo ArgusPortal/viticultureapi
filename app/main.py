@@ -10,7 +10,6 @@ try:
     from fastapi import FastAPI, Request
     from fastapi.middleware.cors import CORSMiddleware
     from fastapi.responses import JSONResponse
-    from fastapi.staticfiles import StaticFiles
 except ImportError:
     print("\n===== MISSING DEPENDENCIES =====")
     print("Some required packages are not installed. Please run:")
@@ -148,9 +147,32 @@ contínua das informações.
         "docExpansion": "none",
         "syntaxHighlight.theme": "monokai",
         "deepLinking": True,  # Melhora a navegação
-        "defaultModelsExpandDepth": 3,  # Expande mais detalhes dos modelos
+        "defaultModelsExpandDepth": -1,  # Esconder modelos por padrão
+        "defaultModelExpandDepth": 3,
         "displayRequestDuration": True,  # Mostra duração das requisições
-        "filter": True  # Habilita a busca
+        "filter": True,  # Habilita a busca
+        "persistAuthorization": True,  # Manter autorização entre recarregamentos
+        # Adicionar instruções específicas para autenticação
+        "authDefinitions": {
+            "securitySchemeDefinitions": {
+                "bearerAuth": {
+                    "type": "http",
+                    "scheme": "bearer",
+                    "bearerFormat": "JWT",
+                    "description": """
+### Como obter e usar o token:
+
+1. Faça uma requisição POST para `/api/v1/auth/token` com:
+   - Username: `admin@viticultureapi.com`
+   - Password: `senha_admin_segura`
+
+2. Copie o valor do campo `access_token` da resposta JSON
+
+3. Cole o token no campo abaixo e clique em "Authorize"
+                    """
+                }
+            }
+        }
     },
     terms_of_service="http://example.com/terms/",
 )
