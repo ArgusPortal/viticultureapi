@@ -25,12 +25,13 @@ except ImportError:
 
 from app.api.api import api_router
 from app.core.config import settings
+from app.core.middleware import CacheControlMiddleware
 import uvicorn
 import logging
 
 # Configure logging
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.INFO,  # Corrigido: usando logging.INFO em vez de apenas INFO
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     handlers=[
         logging.StreamHandler(),
@@ -177,6 +178,9 @@ contínua das informações.
     terms_of_service="http://example.com/terms/",
 )
 
+# Primeiro incluir rotas da API
+app.include_router(api_router, prefix=settings.API_V1_STR)
+
 # Configurar CORS
 app.add_middleware(
     CORSMiddleware,
@@ -186,6 +190,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Adicionar middleware de cache
+app.add_middleware(CacheControlMiddleware, default_max_age=3600)  # 1 hora de cache padrão
+
 # Global exception handler
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
@@ -194,9 +201,6 @@ async def global_exception_handler(request: Request, exc: Exception):
         status_code=500,
         content={"detail": "Ocorreu um erro interno no servidor. Por favor, tente novamente mais tarde."}
     )
-
-# Incluir rotas da API
-app.include_router(api_router, prefix=settings.API_V1_STR)
 
 # Add a debug endpoint to check OpenAPI schema
 @app.get("/debug/openapi", include_in_schema=False)

@@ -308,3 +308,26 @@ A API adota um modelo de acesso aberto para promover o uso acadêmico e a democr
 - [Beautiful Soup Documentation](https://www.crummy.com/software/BeautifulSoup/bs4/doc/)
 - [Swagger UI Documentation](https://swagger.io/tools/swagger-ui/)
 - https://excalidraw.com/#json=x1k7UaBZE6iPtxbXyFfkA,QZc81REYTBitIVDsFZ84XQ
+
+## 11. Otimizações de Performance
+
+### 11.1 Sistema de Cache
+
+A API implementa múltiplas camadas de cache para melhorar o desempenho:
+
+1. **Cache de Resultados In-Memory**: 
+   - Resultados de operações custosas (como web scraping) são cacheados em memória
+   - TTL (Time-To-Live) configurável por endpoint
+   - Reduz significativamente o tempo de resposta para consultas repetidas
+
+2. **Cache HTTP**:
+   - Headers HTTP (Cache-Control, ETag, Expires) implementados automaticamente
+   - Permite que browsers e proxies façam cache das respostas
+   - Reduz a carga no servidor e melhora a experiência do usuário
+
+3. **Endpoints de Gerenciamento**:
+   - `/api/v1/cache/info`: Mostra estatísticas do cache
+   - `/api/v1/cache/clear`: Limpa o cache (útil para testes e quando há atualizações de dados)
+   - `/api/v1/cache/test`: Demonstra a diferença de performance entre respostas cacheadas e não-cacheadas
+
+A implementação melhora drasticamente o desempenho para dados que não mudam frequentemente, como estatísticas históricas de produção, importação e exportação.

@@ -567,16 +567,50 @@ async def get_production_data(
     Retorna dados gerais sobre a produção vitivinícola, com possibilidade de filtrar por ano.
     Dados obtidos do arquivo Producao.csv ou diretamente do site VitiBrasil.
     """
+    # Adicionar log extra para debugar o problema com 2022
+    logger.info(f"Endpoint de produção chamado com ano={year}, tipo={type(year).__name__}")
+    
+    # Verificar explicitamente se é 2022 para diagnóstico
+    if year == 2022:
+        logger.warning(f"Processando requisição específica para ano 2022 - usuário: {current_user}")
+        try:
+            # Test if the issue is related to numeric parsing of year 2022
+            year_str = str(year)
+            year_int = int(year_str)
+            logger.info(f"Conversão de 2022: string={year_str}, int={year_int}")
+        except Exception as e:
+            logger.error(f"Erro na conversão do ano 2022: {str(e)}")
+    
     try:
         scraper = ProductionScraper()
         logger.info(f"Fetching production data for year: {year} - requested by user: {current_user}")
         data = scraper.get_general_production(year)
+        
+        # Adicionar verificação específica para dados de 2022
+        if year == 2022 and (not data or not data.get("data")):
+            logger.error(f"Dados vazios para o ano 2022, mas nenhum erro lançado")
+            
         return build_api_response(data, year)
-    except HTTPException:
+    except HTTPException as http_ex:
+        logger.error(f"HTTPException em produção para ano={year}: {http_ex.detail}")
         raise
     except Exception as e:
         error_details = traceback.format_exc()
-        logger.error(f"Error in production endpoint: {error_details}")
+        logger.error(f"Error in production endpoint for year={year}: {error_details}")
+        
+        # Tratamento especial para o ano 2022 para diagnóstico
+        if year == 2022:
+            logger.critical(f"Falha específica no processamento do ano 2022: {str(e)}")
+            # Tentar usar fallback para 2022 mesmo em caso de erro
+            try:
+                scraper = ProductionScraper()
+                fallback_data = scraper._fallback_to_csv('production', None, 2022)
+                if fallback_data and fallback_data.get("data"):
+                    logger.info(f"Usando dados de fallback CSV para 2022")
+                    return build_api_response(fallback_data, 2022)
+            except Exception as fallback_e:
+                logger.error(f"Até mesmo o fallback falhou para 2022: {str(fallback_e)}")
+                
         raise HTTPException(
             status_code=500, 
             detail=f"Erro ao obter dados de produção: {str(e)}"

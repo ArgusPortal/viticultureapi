@@ -4,8 +4,12 @@ from passlib.context import CryptContext
 from typing import Optional
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer, HTTPBearer, HTTPAuthorizationCredentials
+import logging
 
 from app.core.config import settings
+
+# Configurar o logger no nível do módulo
+logger = logging.getLogger(__name__)
 
 # Modificar o CryptContext para usar outros algoritmos também como fallback
 pwd_context = CryptContext(
@@ -16,9 +20,9 @@ pwd_context = CryptContext(
 )
 
 # Usar HTTPBearer como esquema principal para simplificar a interface
-# Isso fará com que o Swagger UI mostre apenas um campo para o token
+# Tornar auto_error=False para permitir tratamento customizado do erro
 http_bearer = HTTPBearer(
-    auto_error=True,
+    auto_error=False,
     description="Digite o token JWT recebido do endpoint /auth/token"
 )
 
@@ -41,7 +45,19 @@ def verify_token(credentials: HTTPAuthorizationCredentials = Depends(http_bearer
         detail="Credenciais inválidas",
         headers={"WWW-Authenticate": "Bearer"},
     )
+    
+    # Se não recebeu credenciais, retorna erro imediatamente
+    if not credentials:
+        logger.error("Nenhum token de autenticação fornecido")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Não autenticado"
+        )
+    
     try:
+        # Remover a referência específica ao year=2022
+        logger.info(f"Verificando token: {credentials.credentials[:10]}...")
+        
         payload = jwt.decode(
             credentials.credentials, 
             settings.SECRET_KEY, 
@@ -49,10 +65,21 @@ def verify_token(credentials: HTTPAuthorizationCredentials = Depends(http_bearer
         )
         username = payload.get("sub")
         if username is None:
+            logger.error("Token inválido: 'sub' ausente no payload")
             raise credentials_exception
+            
+        logger.info(f"Token válido para usuário: {username}")
         return str(username)
-    except JWTError:
+    except JWTError as e:
+        logger.error(f"Erro ao verificar token JWT: {str(e)}")
         raise credentials_exception
+    except Exception as e:
+        # Adicionar captura genérica para registrar todos os erros possíveis
+        logger.error(f"Erro não esperado na verificação do token: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Erro no processamento da autenticação: {str(e)}"
+        )
 
 # Função de fallback que usa OAuth2PasswordBearer (manter para compatibilidade)
 def verify_oauth2_token(token: str = Depends(oauth2_scheme)):
