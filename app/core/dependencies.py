@@ -10,7 +10,8 @@ from typing import Callable, Dict, Any, Optional
 from app.repositories.interfaces import ScrapingRepository, FileRepository
 from app.repositories.file_repository import CSVFileRepository
 from app.repositories.scraping_repository import BaseScrapingRepository
-from app.services.interfaces import DataService, BaseService
+from app.services.interfaces import DataService, BaseService, DataTransformerService
+from app.services.data_transformer import DataTransformerServiceImpl
 
 # Cache de instâncias de repositórios para evitar recriação desnecessária
 _repositories = {}
@@ -40,8 +41,20 @@ async def get_scraping_repository() -> ScrapingRepository:
         _repositories["base_scraping_repository"] = BaseScrapingRepository()
     return _repositories["base_scraping_repository"]
 
-# As dependências de serviços serão implementadas quando criarmos os serviços
-# mas aqui estão os stubs para referência
+# Instâncias de serviços
+_services = {}
+
+# Dependências para serviços
+async def get_data_transformer_service() -> DataTransformerService:
+    """
+    Fornece uma instância do serviço de transformação de dados.
+    
+    Returns:
+        Uma instância de DataTransformerServiceImpl
+    """
+    if "data_transformer" not in _services:
+        _services["data_transformer"] = DataTransformerServiceImpl()
+    return _services["data_transformer"]
 
 async def get_production_service():
     """

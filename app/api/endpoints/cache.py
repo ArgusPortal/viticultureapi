@@ -1,91 +1,223 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Response, Query
-from app.core.cache import get_cache_info, clear_cache
-from app.core.security import verify_token
+"""
+Endpoints para gerenciamento de cache.
+
+Fornece endpoints para consultar, limpar e testar o sistema de cache.
+"""
+from fastapi import APIRouter, Depends, Query, HTTPException
+from typing import Dict, Any, List, Optional, cast
 import time
-import random
+import logging
+
+from app.core.security import verify_token
+from app.core.cache.factory import CacheFactory
+from app.core.cache.interface import TaggedCacheProvider, CacheInfo
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
-@router.get("/info", response_model=dict, summary="Informações do cache")
-async def cache_info(current_user: str = Depends(verify_token)):
-    """
-    Retorna informações sobre o estado atual do cache.
-    
-    Este endpoint requer autenticação. O usuário precisa fornecer um token JWT válido.
-    """
-    return get_cache_info()
-
-@router.post("/clear", response_model=dict, summary="Limpar cache")
-async def clear_cache_endpoint(current_user: str = Depends(verify_token)):
-    """
-    Limpa todo o cache do sistema.
-    
-    Este endpoint requer autenticação. O usuário precisa fornecer um token JWT válido.
-    """
-    clear_cache()
-    return {"message": "Cache limpo com sucesso"}
-
-@router.get("/test", summary="Testar tempos de resposta com e sem cache")
-async def test_cache_response_time(
-    response: Response, 
-    flush: bool = Query(False, description="Se True, ignora o cache e força uma nova consulta")
+@router.get("/info", response_model=Dict[str, Any], summary="Informações do cache")
+async def get_cache_info(
+    provider: Optional[str] = Query(None, description="Provider específico para obter informações"),
+    current_user: str = Depends(verify_token)
 ):
     """
-    Endpoint para testar a diferença de tempo de resposta com e sem cache.
+    Obtém informações sobre o sistema de cache.
     
-    Este endpoint simula um processamento demorado e demonstra a melhoria de desempenho com cache.
-    Use o parâmetro `flush=true` para forçar uma nova consulta (ignorando o cache).
+    Args:
+        provider: Nome do provider específico ou None para todos
+        
+    Returns:
+        Informações sobre o cache
     """
-    start_time = time.time()
+    factory = CacheFactory.get_instance()
     
-    # Chave de cache simples para este endpoint
-    cache_key = "cache_test_endpoint"
+    try:
+        if provider:
+            # Verificar se o provider existe
+            if provider not in factory.get_available_providers():
+                raise HTTPException(status_code=404, detail=f"Provider '{provider}' não encontrado")
+            
+            # Obter informações do provider específico
+            cache_provider = factory.get_provider(provider)
+            if hasattr(cache_provider, "get_info") and callable(getattr(cache_provider, "get_info")):
+                # O método get_info é específico das implementações, não da interface base
+                info = await getattr(cache_provider, "get_info")()
+                return {"provider": provider, "info": info.to_dict()}
+            else:
+                return {"provider": provider, "info": {"details": "Provider não suporta informações detalhadas"}}
+        else:
+            # Obter informações de todos os providers
+            providers_info = await factory.get_providers_info()
+            return {
+                "providers": providers_info,
+                "available_providers": factory.get_available_providers(),
+                "default_provider": factory._default_provider
+            }
+    except Exception as e:
+        logger.error(f"Erro ao obter informações do cache: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Erro ao obter informações do cache: {str(e)}")
+
+@router.post("/clear", response_model=Dict[str, Any], summary="Limpar cache")
+async def clear_cache(
+    provider: Optional[str] = Query(None, description="Provider específico para limpar"),
+    tag: Optional[str] = Query(None, description="Tag específica para invalidar"),
+    current_user: str = Depends(verify_token)
+):
+    """
+    Limpa o cache.
     
-    # Simular processamento demorado (apenas quando não está usando cache ou com flush=true)
-    if flush:
-        # Processamento simulado (0.5 a 1.5 segundos)
-        sleep_time = random.uniform(0.5, 1.5)
-        time.sleep(sleep_time)
-        response.headers["X-Cache-Status"] = "BYPASS"
-    else:
-        # Verificar se temos resposta em cache
-        from app.core.cache import CACHE
-        from datetime import datetime
+    Args:
+        provider: Nome do provider específico ou None para todos
+        tag: Tag específica para invalidar ou None para limpar tudo
         
-        current_time = datetime.utcnow()
-        if cache_key in CACHE:
-            result, expiry_time = CACHE[cache_key]
-            if current_time < expiry_time:
-                response.headers["X-Cache-Status"] = "HIT"
-                elapsed = time.time() - start_time
+    Returns:
+        Resultado da operação
+    """
+    factory = CacheFactory.get_instance()
+    
+    try:
+        if provider:
+            # Verificar se o provider existe
+            if provider not in factory.get_available_providers():
+                raise HTTPException(status_code=404, detail=f"Provider '{provider}' não encontrado")
+            
+            # Limpar provider específico
+            cache_provider = factory.get_provider(provider)
+            
+            if tag and hasattr(cache_provider, "invalidate_tag"):
+                # Invalidar tag específica
+                # Cast explícito para TaggedCacheProvider
+                tagged_provider = cast(TaggedCacheProvider, cache_provider)
+                count = await tagged_provider.invalidate_tag(tag)
                 return {
-                    "message": "Resposta do cache",
-                    "cache_status": "HIT",
-                    "time_elapsed_ms": round(elapsed * 1000, 2),
-                    "cached_at": result["timestamp"]
+                    "message": f"Tag '{tag}' invalidada",
+                    "provider": provider,
+                    "invalidated_count": count
                 }
+            else:
+                # Limpar todo o provider
+                success = await cache_provider.clear()
+                return {
+                    "message": f"Cache '{provider}' limpo",
+                    "success": success
+                }
+        else:
+            # Limpar todos os providers
+            results = {}
+            for provider_name in factory.get_available_providers():
+                cache_provider = factory.get_provider(provider_name)
+                
+                if tag and hasattr(cache_provider, "invalidate_tag"):
+                    # Invalidar tag específica
+                    # Cast explícito para TaggedCacheProvider
+                    tagged_provider = cast(TaggedCacheProvider, cache_provider)
+                    count = await tagged_provider.invalidate_tag(tag)
+                    results[provider_name] = {
+                        "invalidated_count": count,
+                        "success": count > 0
+                    }
+                else:
+                    # Limpar todo o provider
+                    success = await cache_provider.clear()
+                    results[provider_name] = {"success": success}
+            
+            return {
+                "message": "Cache limpo" if not tag else f"Tag '{tag}' invalidada",
+                "results": results
+            }
+    except Exception as e:
+        logger.error(f"Erro ao limpar cache: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Erro ao limpar cache: {str(e)}")
+
+@router.get("/test", response_model=Dict[str, Any], summary="Testar desempenho do cache")
+async def test_cache(
+    provider: Optional[str] = Query(None, description="Provider específico para testar"),
+    flush: bool = Query(False, description="Limpar cache antes do teste"),
+    iterations: int = Query(5, description="Número de iterações para o teste"),
+    current_user: str = Depends(verify_token)
+):
+    """
+    Testa o desempenho do cache.
+    
+    Args:
+        provider: Nome do provider específico ou None para usar o padrão
+        flush: Se True, limpa o cache antes do teste
+        iterations: Número de iterações para o teste
         
-        # Se não houver cache válido, executar o processamento
-        sleep_time = random.uniform(0.5, 1.5)
-        time.sleep(sleep_time)
-        response.headers["X-Cache-Status"] = "MISS"
+    Returns:
+        Resultados do teste
+    """
+    factory = CacheFactory.get_instance()
+    
+    try:
+        # Obter provider
+        cache_provider = factory.get_provider(provider)
+        provider_name = provider or factory._default_provider
         
-        # Armazenar no cache por 30 segundos
-        from app.core.cache import CACHE
-        from datetime import timedelta
+        # Limpar cache se solicitado
+        if flush:
+            await cache_provider.clear()
         
-        result = {
-            "message": "Processamento realizado",
-            "timestamp": time.time()
+        # Testar desempenho
+        results = []
+        key = "cache_test:" + str(time.time())
+        value = {"test": "data", "timestamp": time.time()}
+        
+        # Teste de escrita
+        start_time = time.time()
+        for i in range(iterations):
+            await cache_provider.set(f"{key}:{i}", value)
+        write_time = time.time() - start_time
+        
+        # Teste de leitura (cache miss)
+        start_time = time.time()
+        for i in range(iterations):
+            await cache_provider.get(f"cache_test:missing:{i}")
+        read_miss_time = time.time() - start_time
+        
+        # Teste de leitura (cache hit)
+        start_time = time.time()
+        for i in range(iterations):
+            await cache_provider.get(f"{key}:{i}")
+        read_hit_time = time.time() - start_time
+        
+        # Teste de verificação de existência
+        start_time = time.time()
+        for i in range(iterations):
+            await cache_provider.has(f"{key}:{i}")
+        has_time = time.time() - start_time
+        
+        # Teste de TTL
+        start_time = time.time()
+        for i in range(iterations):
+            await cache_provider.ttl(f"{key}:{i}")
+        ttl_time = time.time() - start_time
+        
+        # Teste de exclusão
+        start_time = time.time()
+        for i in range(iterations):
+            await cache_provider.delete(f"{key}:{i}")
+        delete_time = time.time() - start_time
+        
+        return {
+            "provider": provider_name,
+            "iterations": iterations,
+            "results": {
+                "write_time": write_time,
+                "write_time_per_op": write_time / iterations,
+                "read_miss_time": read_miss_time,
+                "read_miss_time_per_op": read_miss_time / iterations,
+                "read_hit_time": read_hit_time,
+                "read_hit_time_per_op": read_hit_time / iterations,
+                "has_time": has_time,
+                "has_time_per_op": has_time / iterations,
+                "ttl_time": ttl_time,
+                "ttl_time_per_op": ttl_time / iterations,
+                "delete_time": delete_time,
+                "delete_time_per_op": delete_time / iterations,
+                "hit_vs_miss_ratio": read_miss_time / read_hit_time if read_hit_time > 0 else 0
+            }
         }
-        expiry_time = current_time + timedelta(seconds=30)
-        CACHE[cache_key] = (result, expiry_time)
-    
-    elapsed = time.time() - start_time
-    
-    return {
-        "message": "Teste de cache",
-        "cache_status": response.headers["X-Cache-Status"],
-        "time_elapsed_ms": round(elapsed * 1000, 2),
-        "timestamp": time.time()
-    }
+    except Exception as e:
+        logger.error(f"Erro ao testar cache: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Erro ao testar cache: {str(e)}")
