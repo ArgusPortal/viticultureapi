@@ -9,6 +9,8 @@ from urllib.parse import urlencode
 import re
 from datetime import datetime
 import traceback
+from app.core.cache import cache_result
+from app.core.utils import clean_navigation_arrows
 
 logger = logging.getLogger(__name__)
 
@@ -558,129 +560,87 @@ def build_api_response(data, year=None):
         "source": data.get("source", "unknown")
     }
 
-@router.get("/", summary="Dados gerais de produção")
+@router.get("/", response_model=dict, summary="Dados gerais de produção de vinhos")
+@cache_result(ttl_seconds=3600)
 async def get_production_data(
-    year: Optional[int] = Query(None, description="Ano de referência (ex: 2022)"),
+    year: Optional[int] = Query(None, description="Filtrar por ano específico"),
     current_user: str = Depends(verify_token)
 ):
     """
-    Retorna dados gerais sobre a produção vitivinícola, com possibilidade de filtrar por ano.
-    Dados obtidos do arquivo Producao.csv ou diretamente do site VitiBrasil.
+    Retorna dados gerais de produção de vinhos, sucos e derivados no Brasil.
     """
-    # Adicionar log extra para debugar o problema com 2022
-    logger.info(f"Endpoint de produção chamado com ano={year}, tipo={type(year).__name__}")
+    scraper = ProductionScraper()
+    result = scraper.get_general_production(year)
     
-    # Verificar explicitamente se é 2022 para diagnóstico
-    if year == 2022:
-        logger.warning(f"Processando requisição específica para ano 2022 - usuário: {current_user}")
-        try:
-            # Test if the issue is related to numeric parsing of year 2022
-            year_str = str(year)
-            year_int = int(year_str)
-            logger.info(f"Conversão de 2022: string={year_str}, int={year_int}")
-        except Exception as e:
-            logger.error(f"Erro na conversão do ano 2022: {str(e)}")
+    # Clean the data to remove navigation arrows entries
+    if "data" in result and isinstance(result["data"], list):
+        result["data"] = clean_navigation_arrows(result["data"])
     
-    try:
-        scraper = ProductionScraper()
-        logger.info(f"Fetching production data for year: {year} - requested by user: {current_user}")
-        data = scraper.get_general_production(year)
-        
-        # Adicionar verificação específica para dados de 2022
-        if year == 2022 and (not data or not data.get("data")):
-            logger.error(f"Dados vazios para o ano 2022, mas nenhum erro lançado")
-            
-        return build_api_response(data, year)
-    except HTTPException as http_ex:
-        logger.error(f"HTTPException em produção para ano={year}: {http_ex.detail}")
-        raise
-    except Exception as e:
-        error_details = traceback.format_exc()
-        logger.error(f"Error in production endpoint for year={year}: {error_details}")
-        
-        # Tratamento especial para o ano 2022 para diagnóstico
-        if year == 2022:
-            logger.critical(f"Falha específica no processamento do ano 2022: {str(e)}")
-            # Tentar usar fallback para 2022 mesmo em caso de erro
-            try:
-                scraper = ProductionScraper()
-                fallback_data = scraper._fallback_to_csv('production', None, 2022)
-                if fallback_data and fallback_data.get("data"):
-                    logger.info(f"Usando dados de fallback CSV para 2022")
-                    return build_api_response(fallback_data, 2022)
-            except Exception as fallback_e:
-                logger.error(f"Até mesmo o fallback falhou para 2022: {str(fallback_e)}")
-                
-        raise HTTPException(
-            status_code=500, 
-            detail=f"Erro ao obter dados de produção: {str(e)}"
-        )
+    # Add year to response if filtered
+    if year:
+        result["ano_filtro"] = year
+    
+    return result
 
-@router.get("/wine", summary="Dados de produção de vinhos")
+@router.get("/wine", response_model=dict, summary="Dados de produção de vinhos")
+@cache_result(ttl_seconds=3600)
 async def get_wine_production(
-    year: Optional[int] = Query(None, description="Ano de referência (ex: 2022)"),
+    year: Optional[int] = Query(None, description="Filtrar por ano específico"),
     current_user: str = Depends(verify_token)
 ):
     """
-    Retorna dados sobre a produção de vinhos, com possibilidade de filtrar por ano.
+    Retorna dados específicos de produção de vinhos no Brasil.
     """
-    try:
-        scraper = ProductionScraper()
-        logger.info(f"Fetching wine production data for year: {year} - requested by user: {current_user}")
-        data = scraper.get_wine_production(year)
-        return build_api_response(data, year)
-    except HTTPException:
-        raise
-    except Exception as e:
-        error_details = traceback.format_exc()
-        logger.error(f"Error in wine production endpoint: {error_details}")
-        raise HTTPException(
-            status_code=500, 
-            detail=f"Erro ao obter dados de produção de vinhos: {str(e)}"
-        )
+    scraper = ProductionScraper()
+    result = scraper.get_wine_production(year)
+    
+    # Clean the data to remove navigation arrows and duplicate quantity fields
+    if "data" in result and isinstance(result["data"], list):
+        result["data"] = clean_navigation_arrows(result["data"])
+    
+    if year:
+        result["ano_filtro"] = year
+    
+    return result
 
-@router.get("/grape", summary="Dados de produção de uvas")
+@router.get("/grape", response_model=dict, summary="Dados de produção de uvas")
+@cache_result(ttl_seconds=3600)
 async def get_grape_production(
-    year: Optional[int] = Query(None, description="Ano de referência (ex: 2022)"),
+    year: Optional[int] = Query(None, description="Filtrar por ano específico"),
     current_user: str = Depends(verify_token)
 ):
     """
-    Retorna dados sobre a produção de uvas, com possibilidade de filtrar por ano.
+    Retorna dados de produção de sucos de uva no Brasil.
     """
-    try:
-        scraper = ProductionScraper()
-        logger.info(f"Fetching grape production data for year: {year} - requested by user: {current_user}")
-        data = scraper.get_grape_production(year)
-        return build_api_response(data, year)
-    except HTTPException:
-        raise
-    except Exception as e:
-        error_details = traceback.format_exc()
-        logger.error(f"Error in grape production endpoint: {error_details}")
-        raise HTTPException(
-            status_code=500, 
-            detail=f"Erro ao obter dados de produção de uvas: {str(e)}"
-        )
+    scraper = ProductionScraper()
+    result = scraper.get_grape_production(year)
+    
+    # Clean the data to remove navigation arrows and duplicate quantity fields
+    if "data" in result and isinstance(result["data"], list):
+        result["data"] = clean_navigation_arrows(result["data"])
+    
+    if year:
+        result["ano_filtro"] = year
+    
+    return result
 
-@router.get("/derivative", summary="Dados de produção de derivados")
+@router.get("/derivative", response_model=dict, summary="Dados de produção de derivados")
+@cache_result(ttl_seconds=3600)
 async def get_derivative_production(
-    year: Optional[int] = Query(None, description="Ano de referência (ex: 2022)"),
+    year: Optional[int] = Query(None, description="Filtrar por ano específico"),
     current_user: str = Depends(verify_token)
 ):
     """
-    Retorna dados sobre a produção de derivados da uva e do vinho, com possibilidade de filtrar por ano.
+    Retorna dados de produção de derivados da uva e do vinho no Brasil.
     """
-    try:
-        scraper = ProductionScraper()
-        logger.info(f"Fetching derivative production data for year: {year} - requested by user: {current_user}")
-        data = scraper.get_derivative_production(year)
-        return build_api_response(data, year)
-    except HTTPException:
-        raise
-    except Exception as e:
-        error_details = traceback.format_exc()
-        logger.error(f"Error in derivative production endpoint: {error_details}")
-        raise HTTPException(
-            status_code=500, 
-            detail=f"Erro ao obter dados de produção de derivados: {str(e)}"
-        )
+    scraper = ProductionScraper()
+    result = scraper.get_derivative_production(year)
+    
+    # Clean the data to remove navigation arrows and duplicate quantity fields
+    if "data" in result and isinstance(result["data"], list):
+        result["data"] = clean_navigation_arrows(result["data"])
+    
+    if year:
+        result["ano_filtro"] = year
+    
+    return result
