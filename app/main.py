@@ -1,3 +1,8 @@
+"""
+Ponto de entrada da aplicação FastAPI.
+
+Define a configuração da API, rotas, middlewares e documentação.
+"""
 import sys
 import os
 from contextlib import asynccontextmanager
@@ -25,20 +30,19 @@ except ImportError:
 
 from app.api.api import api_router
 from app.core.config import settings
-from app.core.middleware import CacheControlMiddleware
+from app.core.middleware import setup_middlewares
+from app.core.logging import setup_logging, get_logger
+from app.core.exceptions import BaseAppException, handle_exception
 import uvicorn
-import logging
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,  # Corrigido: usando logging.INFO em vez de apenas INFO
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    handlers=[
-        logging.StreamHandler(),
-        logging.FileHandler("app.log")
-    ]
+# Configurar logging
+setup_logging(
+    level=os.getenv("LOG_LEVEL", "INFO"),
+    log_file=os.getenv("LOG_FILE", "app.log"),
+    log_json=os.getenv("LOG_JSON", "false").lower() == "true",
+    app_name="viticultureapi"
 )
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 tags_metadata = [
     {
@@ -64,6 +68,14 @@ tags_metadata = [
     {
         "name": "Autenticação",
         "description": "Endpoints para autenticação e gerenciamento de tokens."
+    },
+    {
+        "name": "Cache",
+        "description": "Endpoints para gerenciamento e monitoramento do sistema de cache."
+    },
+    {
+        "name": "Diagnóstico",
+        "description": "Endpoints para diagnóstico e monitoramento da aplicação."
     }
 ]
 
@@ -89,12 +101,12 @@ async def lifespan(app: FastAPI):
         return app.openapi_schema
     
     app.openapi = custom_openapi
-    logger.info("Customized OpenAPI schema generation")
+    logger.info("Aplicação iniciada: configurações carregadas e API pronta")
     
     yield  # This is where FastAPI runs and serves requests
     
-    # Cleanup - restore original method if needed
-    # app.openapi = original_openapi  # Uncomment if you want to restore on shutdown
+    # Cleanup - runs on shutdown
+    logger.info("Aplicação finalizada")
 
 app = FastAPI(
     lifespan=lifespan,
@@ -190,27 +202,58 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Adicionar middleware de cache
-app.add_middleware(CacheControlMiddleware, default_max_age=3600)  # 1 hora de cache padrão
+# Configurar middlewares de logging, cache e tratamento de erros
+setup_middlewares(app)
 
-# Global exception handler
+# Manipulador global de exceções
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
-    logger.error(f"Unhandled exception: {str(exc)}", exc_info=True)
+    # Converter para exceção da aplicação
+    app_exception = handle_exception(exc)
+    
+    # Registrar erro
+    logger.error(
+        f"Unhandled exception: {app_exception.message}",
+        exc_info=True,
+        path=request.url.path,
+        method=request.method
+    )
+    
+    # Retornar resposta JSON
     return JSONResponse(
-        status_code=500,
-        content={"detail": "Ocorreu um erro interno no servidor. Por favor, tente novamente mais tarde."}
+        status_code=app_exception.status_code,
+        content=app_exception.to_dict()
     )
 
-# Add a debug endpoint to check OpenAPI schema
+# Endpoint para verificar schema OpenAPI
 @app.get("/debug/openapi", include_in_schema=False)
 async def debug_openapi():
-    """Endpoint to check the OpenAPI schema directly"""
+    """Endpoint para verificar o schema OpenAPI diretamente"""
     schema = app.openapi()
-    # Ensure the OpenAPI version is explicitly set
+    # Garantir que a versão OpenAPI está explicitamente definida
     if "openapi" not in schema:
         schema["openapi"] = "3.0.0"
     return schema
+
+# Endpoint de verificação de saúde
+@app.get("/health", tags=["Diagnóstico"], summary="Verificar saúde da API")
+async def health_check():
+    """
+    Verifica se a API está funcionando corretamente.
+    
+    Returns:
+        Dicionário com informações de saúde
+    """
+    from datetime import datetime
+    import platform
+    
+    return {
+        "status": "online",
+        "timestamp": datetime.now().isoformat(),
+        "version": app.version,
+        "python_version": platform.python_version(),
+        "environment": os.getenv("ENVIRONMENT", "development")
+    }
 
 # Modificar a rota raiz
 @app.get("/", include_in_schema=False)
