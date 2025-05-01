@@ -25,6 +25,8 @@ def cache_result(ttl_seconds=3600):  # Cache de 1 hora por padrão
     def decorator(func):
         @wraps(func)
         async def wrapper(*args, **kwargs):
+            global CACHE  # Add global declaration to access the global CACHE
+            
             # Criar uma chave única baseada na função e seus argumentos
             cache_key = f"{func.__module__}.{func.__name__}:{hashlib.md5(str(args).encode() + str(kwargs).encode()).hexdigest()}"
             

@@ -7,8 +7,9 @@ import logging
 import inspect
 import hashlib
 import json
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union, TypeVar, cast
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union, TypeVar, cast, overload
 from functools import wraps
+from datetime import datetime, timedelta
 
 from app.core.cache.factory import CacheFactory
 from app.core.cache.interface import TaggedCacheProvider
@@ -18,8 +19,13 @@ logger = logging.getLogger(__name__)
 # Definir tipo genérico para funções
 F = TypeVar('F', bound=Callable[..., Any])
 
+# Overload para permitir uso como @cache_result e @cache_result()
+@overload
+def cache_result(ttl_seconds_or_func: F) -> F: ...
+
+@overload
 def cache_result(
-    ttl_seconds: Optional[int] = 3600,
+    ttl_seconds_or_func: int = 3600,
     key_prefix: Optional[str] = None,
     tags: Optional[List[str]] = None,
     provider: Optional[str] = None,
@@ -27,12 +33,23 @@ def cache_result(
     include_kwargs_in_key: bool = True,
     skip_args: Optional[List[int]] = None,
     skip_kwargs: Optional[List[str]] = None
-) -> Callable[[F], F]:
+) -> Callable[[F], F]: ...
+
+def cache_result(
+    ttl_seconds_or_func: Union[int, F] = 3600,
+    key_prefix: Optional[str] = None,
+    tags: Optional[List[str]] = None,
+    provider: Optional[str] = None,
+    include_args_in_key: bool = True,
+    include_kwargs_in_key: bool = True,
+    skip_args: Optional[List[int]] = None,
+    skip_kwargs: Optional[List[str]] = None
+) -> Union[F, Callable[[F], F]]:
     """
     Decorator para cache de resultados de funções.
     
     Args:
-        ttl_seconds: Tempo de vida em segundos
+        ttl_seconds_or_func: Tempo de vida em segundos ou função a ser decorada
         key_prefix: Prefixo para a chave de cache
         tags: Lista de tags a serem associadas à chave
         provider: Nome do provider de cache a ser usado
@@ -42,12 +59,38 @@ def cache_result(
         skip_kwargs: Lista de nomes de kwargs a serem ignorados na chave
         
     Returns:
-        Função decorada
+        Função decorada ou decorator
     """
+    # Compatibilidade com chamadas diretas como @cache_result
+    if callable(ttl_seconds_or_func) and not isinstance(ttl_seconds_or_func, int):
+        return _cache_decorator(ttl_seconds_or_func, 3600, key_prefix, tags, provider, 
+                               include_args_in_key, include_kwargs_in_key, skip_args, skip_kwargs)
+    
+    # Caso normal, com parâmetros: @cache_result(ttl_seconds=xxx)
+    ttl_seconds = ttl_seconds_or_func if isinstance(ttl_seconds_or_func, int) else 3600
+    
     def decorator(func: F) -> F:
-        @wraps(func)
-        async def wrapper(*args: Any, **kwargs: Any) -> Any:
-            # Obter provider
+        return _cache_decorator(func, ttl_seconds, key_prefix, tags, provider,
+                               include_args_in_key, include_kwargs_in_key, skip_args, skip_kwargs)
+    
+    return decorator
+
+def _cache_decorator(
+    func: F,
+    ttl_seconds: int,
+    key_prefix: Optional[str],
+    tags: Optional[List[str]],
+    provider: Optional[str],
+    include_args_in_key: bool,
+    include_kwargs_in_key: bool,
+    skip_args: Optional[List[int]],
+    skip_kwargs: Optional[List[str]]
+) -> F:
+    """Implementação real do decorator de cache"""
+    @wraps(func)
+    async def wrapper(*args: Any, **kwargs: Any) -> Any:
+        # Obter provider - try/except para garantir que erros no cache não afetem a função original
+        try:
             factory = CacheFactory.get_instance()
             cache_provider = factory.get_provider(provider)
             
@@ -80,11 +123,24 @@ def cache_result(
                 # Provedor não suporta tags ou sem tags para associar
                 await cache_provider.set(cache_key, result, ttl_seconds)
             
+            # COMPATIBILITY WITH OLD IMPLEMENTATION
+            # Also store in the global CACHE dict for backward compatibility
+            try:
+                from app.core.cache import CACHE
+                # Ensure ttl_seconds is not None before using it
+                seconds_value = ttl_seconds if ttl_seconds is not None else 3600
+                expiry_time = datetime.utcnow() + timedelta(seconds=float(seconds_value))
+                CACHE[cache_key] = (result, expiry_time)
+            except ImportError:
+                pass
+            
             return result
-        
-        return cast(F, wrapper)
+        except Exception as e:
+            # Em caso de erro no cache, executamos a função original
+            logger.error(f"Error using cache for {func.__name__}: {str(e)}")
+            return await func(*args, **kwargs) if inspect.iscoroutinefunction(func) else func(*args, **kwargs)
     
-    return decorator
+    return cast(F, wrapper)
 
 def _generate_cache_key(
     func: Callable,
@@ -129,7 +185,8 @@ def _generate_cache_key(
                 # Se falhar, usar hash do repr
                 processed_args.append(hashlib.md5(repr(arg).encode()).hexdigest())
         
-        key_parts.append(":".join(processed_args))
+        if processed_args:
+            key_parts.append(":".join(processed_args))
     
     # Adicionar kwargs se necessário
     if include_kwargs:
@@ -144,10 +201,11 @@ def _generate_cache_key(
                 # Se falhar, usar hash do repr
                 processed_kwargs.append(f"{k}={hashlib.md5(repr(v).encode()).hexdigest()}")
         
-        key_parts.append(",".join(processed_kwargs))
+        if processed_kwargs:
+            key_parts.append(",".join(processed_kwargs))
     
     # Juntar tudo
-    key = ":".join(key_parts)
+    key = ":".join([p for p in key_parts if p])
     
     # Limitar tamanho da chave
     if len(key) > 250:
@@ -174,15 +232,18 @@ def invalidate_cache_tag(tag: str, provider: Optional[str] = None) -> Callable:
             result = await func(*args, **kwargs) if inspect.iscoroutinefunction(func) else func(*args, **kwargs)
             
             # Invalidar tag
-            factory = CacheFactory.get_instance()
-            cache_provider = factory.get_provider(provider)
-            
-            if hasattr(cache_provider, "invalidate_tag"):
-                tagged_provider = cast(TaggedCacheProvider, cache_provider)
-                count = await tagged_provider.invalidate_tag(tag)
-                logger.info(f"Invalidated {count} cache entries with tag '{tag}'")
-            else:
-                logger.warning(f"Provider não suporta invalidação por tag: {tag}")
+            try:
+                factory = CacheFactory.get_instance()
+                cache_provider = factory.get_provider(provider)
+                
+                if hasattr(cache_provider, "invalidate_tag"):
+                    tagged_provider = cast(TaggedCacheProvider, cache_provider)
+                    count = await tagged_provider.invalidate_tag(tag)
+                    logger.info(f"Invalidated {count} cache entries with tag '{tag}'")
+                else:
+                    logger.warning(f"Provider não suporta invalidação por tag: {tag}")
+            except Exception as e:
+                logger.error(f"Error invalidating cache tag {tag}: {str(e)}")
             
             return result
         
