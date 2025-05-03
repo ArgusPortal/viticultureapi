@@ -16,3 +16,4 @@ __pycache__/
 
 README.md
 *.db
+data_quality/

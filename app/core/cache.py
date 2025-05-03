@@ -82,11 +82,58 @@ def add_cache_headers(response, max_age=3600):
         response: Objeto Response do FastAPI
         max_age (int): Tempo máximo de cache em segundos
     """
-    response.headers["Cache-Control"] = f"max-age={max_age}, public"
-    expiry_time = (datetime.utcnow() + timedelta(seconds=max_age)).strftime("%a, %d %b %Y %H:%M:%S GMT")
-    response.headers["Expires"] = expiry_time
+    # Respeitar os headers de Cache-Control já existentes
+    if "Cache-Control" not in response.headers:
+        response.headers["Cache-Control"] = f"max-age={max_age}, public"
+    
+    # Adicionar header de Expires se não existir
+    if "Expires" not in response.headers:
+        expiry_time = (datetime.utcnow() + timedelta(seconds=max_age)).strftime("%a, %d %b %Y %H:%M:%S GMT")
+        response.headers["Expires"] = expiry_time
     
     # Gerar um ETag simples baseado no conteúdo da resposta
-    if hasattr(response, "body") and response.body:
-        etag = hashlib.md5(response.body).hexdigest()
-        response.headers["ETag"] = f'"{etag}"'
+    if "ETag" not in response.headers and hasattr(response, "body"):
+        try:
+            # Garantir que o body existe e não é vazio
+            if response.body:
+                etag = hashlib.md5(response.body).hexdigest()
+                response.headers["ETag"] = f'"{etag}"'
+        except Exception as e:
+            logger.warning(f"Erro ao gerar ETag: {str(e)}")
+
+# Add a cache provider function to support the ConcreteCacheLoader
+def get_cache_provider():
+    """
+    Returns a simple cache provider object with set/get/delete methods
+    that operates on the global CACHE dictionary.
+    
+    Returns:
+        A cache provider object with standardized interface
+    """
+    class SimpleCacheProvider:
+        def set(self, key, value, ttl_seconds=3600, tags=None):
+            """Store a value in the cache with expiration time"""
+            global CACHE
+            expiry_time = datetime.utcnow() + timedelta(seconds=ttl_seconds)
+            CACHE[key] = (value, expiry_time)
+            logger.debug(f"Stored '{key}' in cache with TTL: {ttl_seconds}s")
+            return True
+            
+        def get(self, key):
+            """Get a value from cache if it exists and is not expired"""
+            global CACHE
+            if key in CACHE:
+                value, expiry_time = CACHE[key]
+                if datetime.utcnow() < expiry_time:
+                    return value
+            return None
+            
+        def delete(self, key):
+            """Delete a key from cache"""
+            global CACHE
+            if key in CACHE:
+                del CACHE[key]
+                return True
+            return False
+    
+    return SimpleCacheProvider()

@@ -46,15 +46,15 @@ def cache_result(
     skip_kwargs: Optional[List[str]] = None
 ) -> Union[F, Callable[[F], F]]:
     """
-    Decorator para cache de resultados de funções.
+    Decora uma função assíncrona para cachear seu resultado.
     
     Args:
-        ttl_seconds_or_func: Tempo de vida em segundos ou função a ser decorada
-        key_prefix: Prefixo para a chave de cache
-        tags: Lista de tags a serem associadas à chave
-        provider: Nome do provider de cache a ser usado
-        include_args_in_key: Se True, inclui args na chave
-        include_kwargs_in_key: Se True, inclui kwargs na chave
+        ttl_seconds_or_func: Tempo de vida do cache em segundos ou função que retorna o TTL
+        key_prefix: Prefixo opcional para a chave do cache
+        tags: Tags para categorizar o cache (opcional)
+        provider: Nome do provider de cache (opcional)
+        include_args_in_key: Se deve incluir args na chave do cache
+        include_kwargs_in_key: Se deve incluir kwargs na chave do cache
         skip_args: Lista de índices de args a serem ignorados na chave
         skip_kwargs: Lista de nomes de kwargs a serem ignorados na chave
         
@@ -64,7 +64,7 @@ def cache_result(
     # Compatibilidade com chamadas diretas como @cache_result
     if callable(ttl_seconds_or_func) and not isinstance(ttl_seconds_or_func, int):
         return _cache_decorator(ttl_seconds_or_func, 3600, key_prefix, tags, provider, 
-                               include_args_in_key, include_kwargs_in_key, skip_args, skip_kwargs)
+                              include_args_in_key, include_kwargs_in_key, skip_args, skip_kwargs)
     
     # Caso normal, com parâmetros: @cache_result(ttl_seconds=xxx)
     ttl_seconds = ttl_seconds_or_func if isinstance(ttl_seconds_or_func, int) else 3600

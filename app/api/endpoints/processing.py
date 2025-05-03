@@ -6,6 +6,7 @@ import logging
 import traceback
 from enum import Enum
 from pydantic import BaseModel, Field
+from app.core.cache import cache_result  # Add missing import for cache_result
 
 logger = logging.getLogger(__name__)
 
@@ -126,6 +127,7 @@ async def get_processing_data(
 @router.get("/vinifera", 
     summary="Dados de processamento de uvas viníferas", 
     response_description="Dados de processamento de uvas viníferas")
+@cache_result(ttl_seconds_or_func=3600)  # Nome de parâmetro corrigido
 async def get_vinifera_processing_data(
     year: Optional[int] = Query(None, 
                               description="Ano de referência dos dados", 
@@ -166,6 +168,7 @@ async def get_vinifera_processing_data(
 @router.get("/american", 
     summary="Dados de processamento de uvas americanas e híbridas", 
     response_description="Dados de processamento de uvas americanas e híbridas")
+@cache_result(ttl_seconds_or_func=3600)  # Nome de parâmetro corrigido
 async def get_american_processing_data(
     year: Optional[int] = Query(None, 
                               description="Ano de referência dos dados", 

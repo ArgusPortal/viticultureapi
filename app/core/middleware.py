@@ -13,6 +13,10 @@ from starlette.types import ASGIApp, Scope, Receive, Send
 import json
 import traceback
 import sys
+import hashlib
+from datetime import datetime, timedelta
+from wsgiref.handlers import format_date_time
+from time import mktime
 
 from app.core.exceptions import BaseAppException, handle_exception
 from app.models.base import ErrorResponse
@@ -74,25 +78,34 @@ class CacheControlMiddleware(BaseHTTPMiddleware):
             response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
             return response
         
-        # Determinar max-age com base no caminho
+        # Define a default max_age value first to avoid UnboundLocalError
         max_age = self.default_max_age
-        for cache_path, age in self.cache_paths.items():
-            if path.startswith(cache_path):
-                max_age = age
-                break
         
-        # Adicionar header cache-control
-        response.headers["Cache-Control"] = f"public, max-age={max_age}"
-        
-        # Adicionar Expires header (para compatibilidade)
-        if hasattr(response, "headers") and "Expires" not in response.headers:
-            from datetime import datetime, timedelta
-            from wsgiref.handlers import format_date_time
-            from time import mktime
+        # Check if Cache-Control header already exists and should be preserved
+        if "Cache-Control" not in response.headers:
+            # Determinar max-age com base no caminho
+            for cache_path, age in self.cache_paths.items():
+                if path.startswith(cache_path):
+                    max_age = age
+                    break
             
-            expires = datetime.now() + timedelta(seconds=max_age)
-            stamp = mktime(expires.timetuple())
-            response.headers["Expires"] = format_date_time(stamp)
+            # Set the Cache-Control header using the determined max_age
+            response.headers["Cache-Control"] = f"public, max-age={max_age}"
+        
+        # Add Expires header if it doesn't exist
+        if "Expires" not in response.headers:
+            expiry_time = (datetime.utcnow() + timedelta(seconds=max_age)).strftime("%a, %d %b %Y %H:%M:%S GMT")
+            response.headers["Expires"] = expiry_time
+        
+        # Try to add ETag header if it doesn't exist and response has a body
+        if "ETag" not in response.headers and hasattr(response, "body"):
+            try:
+                # Garantir que o body existe e não é vazio antes de calcular o ETag
+                if response.body:
+                    etag = hashlib.md5(response.body).hexdigest()
+                    response.headers["ETag"] = f'"{etag}"'
+            except Exception as e:
+                logger.warning(f"Erro ao gerar ETag: {str(e)}")
         
         return response
 

@@ -1,0 +1,112 @@
+{
+  "report_name": "validacao_documento",
+  "timestamp": "2025-05-03T12:14:32.303159",
+  "is_valid": false,
+  "total_issues": 6,
+  "issues": [
+    {
+      "field": "documento.ano",
+      "message": "Valor menor que o mínimo permitido (1990)",
+      "severity": "error",
+      "code": "VAL-14ab66",
+      "details": {
+        "min_value": 1990
+      }
+    },
+    {
+      "field": "documento.estado",
+      "message": "String excede o comprimento máximo permitido (2)",
+      "severity": "error",
+      "code": "VAL-74b8f0",
+      "details": {
+        "max_length": 2,
+        "actual_length": 3
+      }
+    },
+    {
+      "field": "documento.pais",
+      "message": "String tem comprimento menor que o mínimo permitido (3)",
+      "severity": "error",
+      "code": "VAL-9289ed",
+      "details": {
+        "min_length": 3,
+        "actual_length": 2
+      }
+    },
+    {
+      "field": "documento.item.quantidade",
+      "message": "Valor menor que o mínimo permitido (0)",
+      "severity": "error",
+      "code": "VAL-7df34f",
+      "details": {
+        "min_value": 0
+      }
+    },
+    {
+      "field": "documento.item.unidade",
+      "message": "Valor não está entre os valores permitidos",
+      "severity": "error",
+      "code": "VAL-4c3f51",
+      "details": {
+        "allowed_values": [
+          "ton",
+          "kg"
+        ]
+      }
+    },
+    {
+      "field": "documento.data_coleta",
+      "message": "Formato de data inválido. Esperado: %Y-%m-%d",
+      "severity": "error",
+      "code": "VAL-e00196",
+      "details": {}
+    }
+  ],
+  "summary": {
+    "report_name": "validacao_documento",
+    "timestamp": "2025-05-03T12:14:32.303159",
+    "is_valid": false,
+    "total_issues": 6,
+    "issues_by_severity": {
+      "error": 6
+    },
+    "fields_with_issues": {
+      "documento.data_coleta": {
+        "total": 1,
+        "by_severity": {
+          "error": 1
+        }
+      },
+      "documento.item.unidade": {
+        "total": 1,
+        "by_severity": {
+          "error": 1
+        }
+      },
+      "documento.pais": {
+        "total": 1,
+        "by_severity": {
+          "error": 1
+        }
+      },
+      "documento.estado": {
+        "total": 1,
+        "by_severity": {
+          "error": 1
+        }
+      },
+      "documento.ano": {
+        "total": 1,
+        "by_severity": {
+          "error": 1
+        }
+      },
+      "documento.item.quantidade": {
+        "total": 1,
+        "by_severity": {
+          "error": 1
+        }
+      }
+    }
+  }
+}

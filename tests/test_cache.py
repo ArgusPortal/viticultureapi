@@ -15,10 +15,8 @@ cache_logger = logging.getLogger('app.core.cache')
 cache_logger.setLevel(logging.DEBUG)
 
 # Importar corretamente do pacote app.core.cache
-# ao invés de tentar importar do módulo cache.py diretamente
-from app.core.cache import cache_result, clear_cache, clear_cache_sync, get_cache_info, CACHE
-# Para testes que precisam acessar o dicionário CACHE diretamente
-from app.core.cache.memory_provider import MemoryCacheProvider
+from app.core.cache import cache_result, clear_cache, clear_cache_sync, get_cache_info, CACHE  # Added CACHE import
+# Para testes que precisam acessar o provider diretamente
 from app.core.cache.factory import CacheFactory
 
 # Inicializar o CacheFactory para os testes
@@ -30,7 +28,6 @@ print(f"Using cache provider: {default_provider.__class__.__name__}")
 call_counter = 0
 
 # Função de teste que será decorada com cache
-# Use apenas o decorador sem nenhum parâmetro para evitar problemas com o nome do parâmetro
 @cache_result  # Teste com forma simplificada sem argumentos
 async def sample_function(param1, param2=None):
     """Função de exemplo que simula uma operação demorada e incrementa o contador"""

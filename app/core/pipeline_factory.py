@@ -11,7 +11,7 @@ import os
 from app.core.pipeline import (
     Pipeline, Extractor, Transformer, Loader, 
     CSVExtractor, JsonExtractor, APIExtractor, WebScrapingExtractor,
-    DataFrameToCSVLoader, JsonFileLoader, CacheLoader, ModelLoader
+    DataFrameToCSVLoader, JsonFileLoader, ModelLoader
 )
 from app.transform.viticulture import (
     ProductionDataTransformer, ImportExportTransformer, 
@@ -19,8 +19,49 @@ from app.transform.viticulture import (
     DataFrameToDictTransformer
 )
 from app.core.logging import get_logger
+import app.core.cache as cache_module  # Import the entire module instead
 
 logger = get_logger(__name__)
+
+# Create a concrete implementation of a cache loader
+class ConcreteCacheLoader(Loader[Any]):
+    """
+    Loader for saving data to cache.
+    """
+    def __init__(self, key: str, ttl_seconds: int = 3600, tags: Optional[List[str]] = None):
+        self.key = key
+        self.ttl_seconds = ttl_seconds
+        self.tags = tags or []
+        self.logger = get_logger(f"loader.cache.{key}")
+        
+    def load(self, data: Any) -> bool:
+        """
+        Load data into cache.
+        
+        Args:
+            data: Data to be cached
+            
+        Returns:
+            True if data was successfully cached
+        """
+        self.logger.info(f"Saving data to cache: {self.key}")
+        
+        try:
+            # Direct access to the global cache dictionary
+            from datetime import datetime, timedelta
+            
+            # Calculate expiry time
+            expiry_time = datetime.utcnow() + timedelta(seconds=self.ttl_seconds)
+            
+            # Store in the cache
+            cache_module.CACHE[self.key] = (data, expiry_time)
+            
+            self.logger.info(f"Data successfully cached with TTL: {self.ttl_seconds}s")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Failed to cache data: {str(e)}")
+            return False
 
 class ETLPipelineFactory:
     """
@@ -91,7 +132,7 @@ class ETLPipelineFactory:
             if pais_filtro:
                 tags.append(f"pais:{pais_filtro}")
                 
-            pipeline.add_loader(CacheLoader(
+            pipeline.add_loader(ConcreteCacheLoader(
                 key=cache_key,
                 ttl_seconds=cache_ttl,
                 tags=tags
@@ -167,7 +208,7 @@ class ETLPipelineFactory:
             if pais_filtro:
                 tags.append(f"pais:{pais_filtro}")
                 
-            pipeline.add_loader(CacheLoader(
+            pipeline.add_loader(ConcreteCacheLoader(
                 key=cache_key,
                 ttl_seconds=cache_ttl,
                 tags=tags

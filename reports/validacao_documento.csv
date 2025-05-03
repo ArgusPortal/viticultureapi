@@ -1,0 +1,7 @@
+field,severity,message,code,value
+documento.ano,error,Valor menor que o mínimo permitido (1990),VAL-14ab66,1950
+documento.estado,error,String excede o comprimento máximo permitido (2),VAL-74b8f0,RGS
+documento.pais,error,String tem comprimento menor que o mínimo permitido (3),VAL-9289ed,BR
+documento.item.quantidade,error,Valor menor que o mínimo permitido (0),VAL-7df34f,-850.0
+documento.item.unidade,error,Valor não está entre os valores permitidos,VAL-4c3f51,litros
+documento.data_coleta,error,Formato de data inválido. Esperado: %Y-%m-%d,VAL-e00196,01/15/2023
