@@ -1,21 +1,50 @@
 """
 Implementações concretas de validadores.
 
-Fornece validadores específicos para diferentes tipos de dados.
+Este módulo fornece validadores específicos para diferentes tipos de dados,
+implementando a interface Validator. Os validadores permitem verificar
+a conformidade dos dados com regras específicas e gerar resultados
+de validação estruturados.
+
+Classes:
+    StringValidator: Validador para strings com regras como comprimento e padrões
+    NumericValidator: Validador para valores numéricos com regras como min/max
+    DateValidator: Validador para datas com regras como intervalo de datas
+    DictValidator: Validador para dicionários seguindo um schema
+    ListValidator: Validador para listas com validação de itens
+    DataFrameValidator: Validador para DataFrames pandas
 """
 import re
 import pandas as pd
-import numpy as np
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Pattern, Set, Tuple, Union, cast
+from typing import Any, Dict, List, Optional, Pattern, Union
 
 from app.core.validation.interface import (
-    Validator, ValidationResult, ValidationIssue, ValidationSeverity, 
-    Normalizer, ValidatingTransformer
+    Validator, ValidationResult, ValidationIssue, ValidationSeverity, validate_common
 )
 
 class StringValidator(Validator[str]):
-    """Validador para strings."""
+    """
+    Validador para strings.
+    
+    Verifica se uma string atende a critérios como comprimento mínimo/máximo,
+    conformidade com um padrão regex e presença em um conjunto de valores permitidos.
+    
+    Attributes:
+        field_name: Nome do campo sendo validado
+        min_length: Comprimento mínimo permitido
+        max_length: Comprimento máximo permitido
+        pattern: Padrão regex compilado para validação
+        required: Se a string é obrigatória
+        allow_empty: Se strings vazias são permitidas
+        allowed_values: Lista de valores permitidos
+    
+    Example:
+        >>> validator = StringValidator("nome", min_length=3, pattern=r'^[a-z]+$')
+        >>> result = validator.validate("abc")
+        >>> result.is_valid
+        True
+    """
     
     def __init__(
         self,
@@ -57,16 +86,16 @@ class StringValidator(Validator[str]):
         Returns:
             Resultado da validação
         """
-        result = ValidationResult()
+        # Usar a função utilitária para validações comuns
+        result, should_continue = validate_common(
+            data, self.field_name, self.required
+        )
         
-        # Verificar se é None quando obrigatório
+        if not should_continue:
+            return result
+        
+        # Explicit null check to satisfy type checker
         if data is None:
-            if self.required:
-                result.add_issue(ValidationIssue(
-                    field=self.field_name,
-                    message="Campo obrigatório não fornecido",
-                    severity=ValidationSeverity.ERROR
-                ))
             return result
         
         # Verificar se é string vazia
@@ -121,8 +150,29 @@ class StringValidator(Validator[str]):
         
         return result
 
+
 class NumericValidator(Validator[Union[int, float]]):
-    """Validador para valores numéricos."""
+    """
+    Validador para valores numéricos.
+    
+    Verifica se um número atende a critérios como valor mínimo/máximo,
+    se é inteiro quando necessário, e se é positivo ou não-zero quando exigido.
+    
+    Attributes:
+        field_name: Nome do campo sendo validado
+        min_value: Valor mínimo permitido
+        max_value: Valor máximo permitido
+        required: Se o valor é obrigatório
+        allow_zero: Se zero é permitido
+        allow_negative: Se valores negativos são permitidos
+        is_integer: Se o valor deve ser inteiro
+    
+    Example:
+        >>> validator = NumericValidator("idade", min_value=0, max_value=120, is_integer=True)
+        >>> result = validator.validate(25)
+        >>> result.is_valid
+        True
+    """
     
     def __init__(
         self,
@@ -156,27 +206,27 @@ class NumericValidator(Validator[Union[int, float]]):
     
     def validate(self, data: Optional[Union[int, float]]) -> ValidationResult:
         """Valida um valor numérico."""
-        result = ValidationResult()
+        # Usar a função utilitária para validações comuns
+        result, should_continue = validate_common(
+            data, self.field_name, self.required
+        )
         
-        # Verificar se é None quando obrigatório
+        if not should_continue:
+            return result
+            
+        # Ensure data is not None before performing any comparisons
+        # This additional check is needed to satisfy the type checker
         if data is None:
-            if self.required:
-                result.add_issue(ValidationIssue(
-                    field=self.field_name,
-                    message="Valor numérico obrigatório não fornecido",
-                    severity=ValidationSeverity.ERROR
-                ))
             return result
         
         # Check for NaN values before integer validation
         if isinstance(data, float) and pd.isna(data):
-            if self.required:
-                result.add_issue(ValidationIssue(
-                    field=self.field_name,
-                    message="Valor numérico contém NaN (não é um número)",
-                    severity=ValidationSeverity.ERROR,
-                    value="NaN"
-                ))
+            result.add_issue(ValidationIssue(
+                field=self.field_name,
+                message="Valor numérico contém NaN (não é um número)",
+                severity=ValidationSeverity.ERROR,
+                value="NaN"
+            ))
             return result
         
         # Verificar se é inteiro quando necessário
@@ -228,8 +278,27 @@ class NumericValidator(Validator[Union[int, float]]):
         
         return result
 
+
 class DateValidator(Validator[Union[str, datetime]]):
-    """Validador para datas."""
+    """
+    Validador para datas.
+    
+    Verifica se uma data (string ou objeto datetime) está dentro de um intervalo
+    específico e segue o formato esperado quando fornecida como string.
+    
+    Attributes:
+        field_name: Nome do campo sendo validado
+        min_date: Data mínima permitida
+        max_date: Data máxima permitida
+        format: Formato da data para strings (padrão: %Y-%m-%d)
+        required: Se a data é obrigatória
+    
+    Example:
+        >>> validator = DateValidator("data_nascimento", min_date="1900-01-01")
+        >>> result = validator.validate("2000-01-01")
+        >>> result.is_valid
+        True
+    """
     
     def __init__(
         self,
@@ -265,16 +334,12 @@ class DateValidator(Validator[Union[str, datetime]]):
     
     def validate(self, data: Optional[Union[str, datetime]]) -> ValidationResult:
         """Valida uma data."""
-        result = ValidationResult()
+        # Usar a função utilitária para validações comuns
+        result, should_continue = validate_common(
+            data, self.field_name, self.required
+        )
         
-        # Verificar se é None quando obrigatório
-        if data is None:
-            if self.required:
-                result.add_issue(ValidationIssue(
-                    field=self.field_name,
-                    message="Data obrigatória não fornecida",
-                    severity=ValidationSeverity.ERROR
-                ))
+        if not should_continue:
             return result
         
         # Converter para datetime se for string
@@ -283,6 +348,31 @@ class DateValidator(Validator[Union[str, datetime]]):
                 date_obj = datetime.strptime(data, self.format)
             else:
                 date_obj = data
+                
+            # Explicit check to ensure date_obj is not None before comparison
+            if date_obj is None:
+                return result
+                
+            # Verificar data mínima
+            if self.min_date and date_obj < self.min_date:
+                result.add_issue(ValidationIssue(
+                    field=self.field_name,
+                    message=f"Data anterior à data mínima permitida ({self.min_date.strftime(self.format)})",
+                    severity=ValidationSeverity.ERROR,
+                    value=data,
+                    details={"min_date": self.min_date.strftime(self.format)}
+                ))
+            
+            # Verificar data máxima
+            if self.max_date and date_obj > self.max_date:
+                result.add_issue(ValidationIssue(
+                    field=self.field_name,
+                    message=f"Data posterior à data máxima permitida ({self.max_date.strftime(self.format)})",
+                    severity=ValidationSeverity.ERROR,
+                    value=data,
+                    details={"max_date": self.max_date.strftime(self.format)}
+                ))
+        
         except ValueError:
             result.add_issue(ValidationIssue(
                 field=self.field_name,
@@ -292,30 +382,31 @@ class DateValidator(Validator[Union[str, datetime]]):
             ))
             return result
         
-        # Verificar data mínima
-        if self.min_date and date_obj < self.min_date:
-            result.add_issue(ValidationIssue(
-                field=self.field_name,
-                message=f"Data anterior à data mínima permitida ({self.min_date.strftime(self.format)})",
-                severity=ValidationSeverity.ERROR,
-                value=data,
-                details={"min_date": self.min_date.strftime(self.format)}
-            ))
-        
-        # Verificar data máxima
-        if self.max_date and date_obj > self.max_date:
-            result.add_issue(ValidationIssue(
-                field=self.field_name,
-                message=f"Data posterior à data máxima permitida ({self.max_date.strftime(self.format)})",
-                severity=ValidationSeverity.ERROR,
-                value=data,
-                details={"max_date": self.max_date.strftime(self.format)}
-            ))
-        
         return result
 
 class DictValidator(Validator[Dict[str, Any]]):
-    """Validador para dicionários."""
+    """
+    Validador para dicionários.
+    
+    Verifica se um dicionário segue um schema predefinido, aplicando validadores
+    específicos a cada campo e opcionalmente restringindo campos extras.
+    
+    Attributes:
+        field_name: Nome do campo sendo validado
+        schema: Dicionário de validadores para cada campo
+        required: Se o dicionário é obrigatório
+        allow_extra_fields: Se permite campos não definidos no schema
+    
+    Example:
+        >>> schema = {
+        ...     "nome": StringValidator("nome", min_length=2),
+        ...     "idade": NumericValidator("idade", min_value=0, is_integer=True)
+        ... }
+        >>> validator = DictValidator("pessoa", schema=schema)
+        >>> result = validator.validate({"nome": "Ana", "idade": 30})
+        >>> result.is_valid
+        True
+    """
     
     def __init__(
         self,

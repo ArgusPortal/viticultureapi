@@ -4,9 +4,9 @@ Exemplos de uso do sistema de validação.
 Demonstra como utilizar os componentes de validação em conjunto com o pipeline.
 """
 import pandas as pd
-import numpy as np
+import numpy as np  # Import não utilizado diretamente
 from datetime import datetime, timedelta
-from typing import Dict, List, Any, Optional, Union
+from typing import Dict, List, Any, Optional, Union  # Union não é utilizado
 import os
 import logging
 
@@ -149,75 +149,103 @@ def exemplo_validacao_dataframe():
     print(relatorio_json[:200] + "...")  # Mostrar apenas o início do JSON
 
 
-def exemplo_pipeline_com_validacao():
-    """Exemplo de pipeline com validação integrada."""
-    # Usar imports diretos ao invés de imports relativos
-    from app.core.pipeline import Pipeline, DataFrameTransformer, CSVExtractor, DataFrameToCSVLoader
+# Extract transformer out of function scope for reuse
+class LimpezaDadosTransformer(DataFrameTransformer):
+    """Transformer for data cleaning operations."""
     
-    # Criar extrator de CSV
-    extractor = CSVExtractor("data/raw/vinhos.csv")
+    def __init__(self, price_column='preco'):
+        super().__init__("limpeza_dados")
+        self.price_column = price_column
     
-    # Criar transformador para limpeza de dados
-    class LimpezaDadosTransformer(DataFrameTransformer):
-        def transform(self, data: pd.DataFrame) -> pd.DataFrame:  # Changed parameter name from 'df' to 'data'
-            # Remover linhas duplicadas
-            data = data.drop_duplicates()
-            # Preencher valores ausentes
-            data['preco'] = data['preco'].fillna(data['preco'].mean())
-            return data
-    
-    limpeza_transformer = LimpezaDadosTransformer()
-    
-    # Criar validador de colunas
-    column_validators = {
+    def transform(self, data: pd.DataFrame) -> pd.DataFrame:
+        # Remove duplicate rows
+        data = self.drop_duplicates(data)
+        
+        # Fill missing values in price column if it exists
+        if self.price_column in data.columns:
+            data[self.price_column] = data[self.price_column].fillna(data[self.price_column].mean())
+        
+        return data
+
+
+def create_wine_validators():
+    """Create validators for wine data columns."""
+    return {
         'nome': StringValidator('nome', min_length=2, required=True),
         'tipo': StringValidator('tipo', allowed_values=["Tinto", "Branco", "Rosé", "Espumante"]),
         'safra': NumericValidator('safra', min_value=1900, max_value=datetime.now().year, is_integer=True),
         'preco': NumericValidator('preco', min_value=0, allow_zero=False)
     }
-    
-    # Criar transformador de validação usando a fábrica
-    validacao_transformer = ValidationPipelineFactory.create_validating_dataframe_transformer(
-        name="validacao_vinhos",
-        column_validators=column_validators,
-        required_columns=['nome', 'tipo', 'safra', 'preco'],
-        fail_on_invalid=False,
-        report_dir="reports/validation"
-    )
-    
-    # Criar normalizadores para colunas
-    column_normalizers = {
+
+
+def create_wine_normalizers():
+    """Create normalizers for wine data columns."""
+    return {
         'nome': StringNormalizer('nome', strip=True, remove_accents=False),
         'tipo': StringNormalizer('tipo', strip=True, uppercase=True),
         'preco': NumericNormalizer('preco', decimal_places=2)
     }
+
+
+def create_validation_pipeline(
+    input_file="data/raw/vinhos.csv",
+    output_file="data/processed/vinhos_validados.csv",
+    report_dir="reports/validation",
+    fail_on_invalid=False
+):
+    """Create a complete validation pipeline for wine data."""
+    # Create extractor
+    extractor = CSVExtractor(input_file)
     
-    # Criar transformador de normalização
-    normalizacao_transformer = ValidationPipelineFactory.create_normalizing_dataframe_transformer(
-        name="normalizacao_vinhos",
-        column_normalizers=column_normalizers,
-        report_dir="reports/validation"
+    # Create transformers
+    limpeza_transformer = LimpezaDadosTransformer()
+    
+    # Create validation transformer
+    validacao_transformer = ValidationPipelineFactory.create_validating_dataframe_transformer(
+        name="validacao_vinhos",
+        column_validators=create_wine_validators(),
+        required_columns=['nome', 'tipo', 'safra', 'preco'],
+        fail_on_invalid=fail_on_invalid,
+        report_dir=report_dir
     )
     
-    # Criar loader
-    loader = DataFrameToCSVLoader("data/processed/vinhos_validados.csv")
+    # Create normalization transformer
+    normalizacao_transformer = ValidationPipelineFactory.create_normalizing_dataframe_transformer(
+        name="normalizacao_vinhos",
+        column_normalizers=create_wine_normalizers(),
+        report_dir=report_dir
+    )
     
-    # Construir pipeline completo
+    # Create loader
+    loader = DataFrameToCSVLoader(output_file)
+    
+    # Build complete pipeline
     pipeline = Pipeline()
     pipeline.add_extractor(extractor)
+    
     for transformer in [limpeza_transformer, validacao_transformer, normalizacao_transformer]:
         pipeline.add_transformer(transformer)
+    
     pipeline.add_loader(loader)
     
-    # Executar pipeline
+    return pipeline
+
+
+def exemplo_pipeline_com_validacao():
+    """Exemplo de pipeline com validação integrada."""
+    # Usar imports diretos já estão no topo do arquivo
+    
+    # Criar e executar pipeline com configuração padrão
+    pipeline = create_validation_pipeline()
     resultado = pipeline.execute()
     print(f"Pipeline executado com sucesso: {resultado}")
     
     # Verificar relatórios de validação gerados
     import os
-    if os.path.exists("reports/validation"):
+    report_dir = "reports/validation"
+    if os.path.exists(report_dir):
         print("\nRelatórios de validação gerados:")
-        for arquivo in os.listdir("reports/validation"):
+        for arquivo in os.listdir(report_dir):
             print(f"- {arquivo}")
 
 

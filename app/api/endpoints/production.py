@@ -561,7 +561,7 @@ def build_api_response(data, year=None):
     }
 
 @router.get("/", response_model=dict, summary="Dados gerais de produção de vinhos")
-@cache_result(ttl_seconds_or_func=3600)  # Fixed parameter name from ttl_seconds to ttl_seconds_or_func
+@cache_result(ttl_seconds_or_func=3600)  # Usando a versão consolidada
 async def get_production_data(
     year: Optional[int] = Query(None, description="Filtrar por ano específico"),
     current_user: str = Depends(verify_token)
@@ -583,7 +583,7 @@ async def get_production_data(
     return result
 
 @router.get("/wine", response_model=dict, summary="Dados de produção de vinhos")
-@cache_result(ttl_seconds_or_func=3600)  # Nome de parâmetro corrigido
+@cache_result(ttl_seconds_or_func=3600, measure_time=True, log_timing=True)  # Com medição de tempo
 async def get_wine_production(
     year: Optional[int] = Query(None, description="Filtrar por ano específico"),
     current_user: str = Depends(verify_token)

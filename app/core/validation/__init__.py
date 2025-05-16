@@ -9,7 +9,8 @@ from app.core.validation.interface import (
     ValidationResult,
     Validator,
     Normalizer,
-    ValidatingTransformer
+    ValidatingTransformer,
+    validate_common
 )
 
 from app.core.validation.validators import (
@@ -55,6 +56,7 @@ __all__ = [
     'Validator',
     'Normalizer',
     'ValidatingTransformer',
+    'validate_common',  # Adicionar a nova função utilitária
     
     # Validators
     'StringValidator',

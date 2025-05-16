@@ -6,7 +6,7 @@ Fornece mecanismos para relatar problemas de qualidade em dados.
 import json
 import pandas as pd
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Set, Tuple, Union
+from typing import Any, Dict, List, Optional
 import logging
 import os
 import csv

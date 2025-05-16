@@ -6,7 +6,6 @@ Define estruturas e validações para dados de importação e exportação.
 from pydantic import BaseModel, Field, validator
 from typing import List, Optional, Dict, Any, Union
 from datetime import datetime
-from decimal import Decimal
 
 from app.models.base import ResponseBase, DataResponse, BaseConfig
 from app.utils.data_cleaner import safe_float_conversion

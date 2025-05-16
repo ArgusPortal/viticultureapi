@@ -2,6 +2,12 @@
 Módulo de cache.
 
 Fornece funcionalidades de cache para a aplicação.
+
+O decorator principal `cache_result` suporta:
+- Armazenamento e recuperação em cache de resultados de funções
+- Medição de tempo de execução (via parâmetro `measure_time`)
+- Tags para classificar e invalidar cache por categoria
+- Suporte para múltiplos provedores de cache
 """
 
 from functools import wraps
@@ -15,7 +21,7 @@ from app.core.cache.interface import CacheProvider, TaggedCacheProvider, CacheIn
 from app.core.cache.factory import CacheFactory
 from app.core.cache.memory_provider import MemoryCacheProvider
 from app.core.cache.file_provider import FileCacheProvider
-from app.core.cache.decorator import cache_result, invalidate_cache_tag  # Import from decorator.py instead
+from app.core.cache.decorator import cache_result, invalidate_cache_tag
 
 logger = logging.getLogger(__name__)
 

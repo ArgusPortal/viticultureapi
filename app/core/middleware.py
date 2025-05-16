@@ -9,14 +9,10 @@ from typing import Callable, Dict, Any, Optional, List, Union
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.types import ASGIApp, Scope, Receive, Send
+from starlette.types import ASGIApp
 import json
-import traceback
-import sys
 import hashlib
 from datetime import datetime, timedelta
-from wsgiref.handlers import format_date_time
-from time import mktime
 
 from app.core.exceptions import BaseAppException, handle_exception
 from app.models.base import ErrorResponse

@@ -1,27 +1,56 @@
 """
-Interfaces para validação de dados.
+Interfaces do sistema de validação.
 
-Define as interfaces abstratas para validação e normalização de dados.
+Este módulo define as interfaces fundamentais e classes base para o sistema
+de validação de dados, incluindo os conceitos de validador, resultado de validação,
+normalizador e transformador com validação integrada.
+
+Classes:
+    ValidationSeverity: Enum para níveis de severidade de problemas
+    ValidationIssue: Representa um problema encontrado na validação
+    ValidationResult: Agrega os problemas encontrados durante uma validação
+    Validator: Interface base para validadores
+    Normalizer: Interface para normalizadores de dados
+    ValidatingTransformer: Interface para transformadores com validação
 """
 from abc import ABC, abstractmethod
 from enum import Enum
-from typing import Any, Dict, Generic, List, Optional, Set, Tuple, TypeVar, Union
+from typing import Any, Dict, Generic, List, Optional, Tuple, TypeVar, Union
 
-# Tipo genérico para dados de entrada
+# Tipos genéricos para dados de entrada/saída
 T = TypeVar('T')
-# Tipo genérico para dados de saída (dados normalizados)
 U = TypeVar('U')
 
 class ValidationSeverity(Enum):
-    """Níveis de severidade para problemas de validação."""
+    """
+    Níveis de severidade para problemas de validação.
+    
+    Attributes:
+        INFO: Informação não crítica, apenas aviso informativo
+        WARNING: Aviso, problema não crítico mas relevante
+        ERROR: Erro, problema crítico que impede validação
+        CRITICAL: Erro grave, problema que pode comprometer integridade dos dados
+    """
     INFO = "info"
     WARNING = "warning"
     ERROR = "error"
     CRITICAL = "critical"
 
 class ValidationIssue:
-    """Representa um problema encontrado durante a validação."""
+    """
+    Representa um problema identificado durante validação.
     
+    Um problema pode ser desde um simples aviso informativo até
+    um erro crítico que invalida completamente os dados.
+    
+    Attributes:
+        field: Nome do campo onde o problema foi encontrado
+        message: Mensagem descritiva do problema
+        severity: Nível de severidade do problema
+        value: Valor que causou o problema (opcional)
+        code: Código único do problema (opcional)
+        details: Detalhes adicionais sobre o problema (opcional)
+    """
     def __init__(
         self,
         field: str,
@@ -35,11 +64,11 @@ class ValidationIssue:
         Inicializa um problema de validação.
         
         Args:
-            field: Campo ou atributo com problema
-            message: Descrição do problema
-            severity: Severidade do problema
-            value: Valor problemático (opcional)
-            code: Código de identificação do problema (opcional)
+            field: Nome do campo onde o problema foi encontrado
+            message: Mensagem descritiva do problema
+            severity: Nível de severidade do problema
+            value: Valor que causou o problema (opcional)
+            code: Código único do problema (opcional)
             details: Detalhes adicionais sobre o problema (opcional)
         """
         self.field = field
@@ -50,138 +79,272 @@ class ValidationIssue:
         self.details = details or {}
         
     def _generate_code(self) -> str:
-        """Gera um código baseado no campo e na mensagem."""
+        """
+        Gera um código único para o problema baseado em seus atributos.
+        
+        Returns:
+            Código alfanumérico único para o problema
+        """
         import hashlib
-        hash_input = f"{self.field}:{self.message}"
-        return f"VAL-{hashlib.md5(hash_input.encode()).hexdigest()[:6]}"
-    
-    def to_dict(self) -> Dict[str, Any]:
-        """Converte o problema para um dicionário."""
-        return {
+        
+        # Usar um hash dos atributos para gerar um código único
+        base_string = f"{self.field}:{self.message}:{self.severity.value}"
+        if self.value is not None:
+            base_string += f":{str(self.value)}"
+            
+        return f"VAL-{hashlib.md5(base_string.encode()).hexdigest()[:6]}"
+        
+    def __str__(self) -> str:
+        """
+        Representação de string do problema de validação.
+        
+        Returns:
+            Descrição legível do problema
+        """
+        return f"{self.severity.value.upper()}: {self.field} - {self.message}"
+        
+    def to_dict(self) -> Dict[str, Any]:  # Updated return type to be more accurate
+        """
+        Converte o problema para um dicionário.
+        
+        Returns:
+            Representação em dicionário do problema
+        """
+        result: Dict[str, Any] = {  # Explicitly annotate result as Dict[str, Any]
             "field": self.field,
             "message": self.message,
             "severity": self.severity.value,
-            "code": self.code,
-            "details": self.details
+            "code": self.code
         }
-    
-    def __str__(self) -> str:
-        return f"{self.severity.value.upper()}: {self.field} - {self.message}"
+        
+        # Adicionar value somente se não for None
+        if self.value is not None:
+            result["value"] = self.value
+            
+        # Adicionar details somente se não estiver vazio
+        if self.details:
+            result["details"] = self.details
+            
+        return result
 
 class ValidationResult:
-    """Resultado de uma validação, contendo problemas encontrados."""
+    """
+    Agrega problemas encontrados durante uma validação.
     
+    Mantém uma lista de problemas (ValidationIssue) e fornece métodos
+    para verificar se a validação passou, filtrar problemas por severidade
+    ou campo, e combinar resultados de múltiplas validações.
+    
+    Attributes:
+        issues: Lista de problemas encontrados na validação
+    """
     def __init__(self):
-        self.issues: List[ValidationIssue] = []
-        self._fields_with_issues: Set[str] = set()
-        
-    def add_issue(self, issue: ValidationIssue) -> None:
-        """Adiciona um problema ao resultado."""
-        self.issues.append(issue)
-        self._fields_with_issues.add(issue.field)
-        
-    def add_issues(self, issues: List[ValidationIssue]) -> None:
-        """Adiciona múltiplos problemas ao resultado."""
-        for issue in issues:
-            self.add_issue(issue)
-            
-    def has_issues(self, severity: Optional[ValidationSeverity] = None) -> bool:
         """
-        Verifica se existem problemas.
+        Inicializa um resultado de validação vazio.
+        """
+        self.issues: List[ValidationIssue] = []
+    
+    def add_issue(self, issue: ValidationIssue) -> None:
+        """
+        Adiciona um problema ao resultado da validação.
         
         Args:
-            severity: Se fornecido, verifica apenas problemas com esta severidade
-            
+            issue: Problema a ser adicionado
+        """
+        self.issues.append(issue)
+    
+    def add_issues(self, issues: List[ValidationIssue]) -> None:
+        """
+        Adiciona múltiplos problemas ao resultado da validação.
+        
+        Args:
+            issues: Lista de problemas a serem adicionados
+        """
+        for issue in issues:
+            self.add_issue(issue)
+    
+    def has_issues(self, severity: Optional[ValidationSeverity] = None) -> bool:
+        """
+        Verifica se há problemas de uma severidade específica.
+        
+        Args:
+            severity: Severidade dos problemas a serem verificados.
+                     Se None, verifica todos os problemas.
+        
         Returns:
-            True se existirem problemas (da severidade específica, se informada)
+            True se há problemas da severidade especificada, False caso contrário
         """
         if severity is None:
             return len(self.issues) > 0
+            
         return any(issue.severity == severity for issue in self.issues)
     
-    def has_field_issues(self, field: str) -> bool:
-        """Verifica se um campo específico tem problemas."""
-        return field in self._fields_with_issues
-    
     def get_issues_by_severity(self, severity: ValidationSeverity) -> List[ValidationIssue]:
-        """Retorna problemas com a severidade especificada."""
+        """
+        Filtra problemas por severidade.
+        
+        Args:
+            severity: Severidade dos problemas a serem retornados
+            
+        Returns:
+            Lista de problemas com a severidade especificada
+        """
         return [issue for issue in self.issues if issue.severity == severity]
     
     def get_issues_by_field(self, field: str) -> List[ValidationIssue]:
-        """Retorna problemas para o campo especificado."""
+        """
+        Filtra problemas por campo.
+        
+        Args:
+            field: Nome do campo para filtrar problemas
+            
+        Returns:
+            Lista de problemas associados ao campo especificado
+        """
         return [issue for issue in self.issues if issue.field == field]
-    
-    def merge(self, other: 'ValidationResult') -> None:
-        """Mescla outro resultado de validação com este."""
-        self.add_issues(other.issues)
     
     @property
     def is_valid(self) -> bool:
-        """Verifica se não há problemas de severidade ERROR ou CRITICAL."""
+        """
+        Verifica se não há erros críticos no resultado.
+        
+        Um resultado é considerado válido se não contém problemas
+        com severidade ERROR ou CRITICAL.
+        
+        Returns:
+            True se o resultado é válido, False caso contrário
+        """
         return not any(
-            issue.severity in (ValidationSeverity.ERROR, ValidationSeverity.CRITICAL)
+            issue.severity in (ValidationSeverity.ERROR, ValidationSeverity.CRITICAL) 
             for issue in self.issues
         )
     
+    def merge(self, other: 'ValidationResult') -> None:
+        """
+        Combina este resultado com outro resultado de validação.
+        
+        Args:
+            other: Outro resultado de validação a ser combinado
+        """
+        self.add_issues(other.issues)
+    
     def to_dict(self) -> Dict[str, Any]:
-        """Converte o resultado para um dicionário."""
+        """
+        Converte o resultado para um dicionário.
+        
+        Returns:
+            Representação em dicionário do resultado de validação
+        """
         return {
             "is_valid": self.is_valid,
             "total_issues": len(self.issues),
             "issues": [issue.to_dict() for issue in self.issues]
         }
+
+def validate_common(
+    value: Any,
+    field_name: str,
+    required: bool = True,
+    validation_result: Optional[ValidationResult] = None
+) -> Tuple[ValidationResult, bool]:
+    """
+    Realiza validações comuns a todos os tipos de validadores.
+    
+    Args:
+        value: Valor a ser validado
+        field_name: Nome do campo sendo validado
+        required: Se o valor é obrigatório
+        validation_result: Resultado de validação existente (opcional)
         
-    def __bool__(self) -> bool:
-        return self.is_valid
+    Returns:
+        Tupla (resultado_validacao, deve_continuar_validacao)
+        - resultado_validacao: ValidationResult atualizado
+        - deve_continuar_validacao: Se deve continuar com validações específicas
+    """
+    result = validation_result or ValidationResult()
+    
+    # Verificar se é None quando obrigatório
+    if value is None:
+        if required:
+            result.add_issue(ValidationIssue(
+                field=field_name,
+                message="Campo obrigatório não fornecido",
+                severity=ValidationSeverity.ERROR
+            ))
+        return result, False  # Não continue com validações específicas
+    
+    return result, True  # Continue com validações específicas
 
 class Validator(Generic[T], ABC):
-    """Interface abstrata para validadores."""
+    """
+    Interface base para validadores.
     
+    Um validador é responsável por verificar se dados de um tipo específico
+    atendem a um conjunto de regras e produzir um resultado de validação
+    estruturado indicando problemas encontrados.
+    
+    Type Parameters:
+        T: Tipo de dados que este validador pode validar
+    """
     @abstractmethod
     def validate(self, data: T) -> ValidationResult:
         """
-        Valida os dados fornecidos.
+        Valida dados de um tipo específico.
         
         Args:
             data: Dados a serem validados
             
         Returns:
-            Resultado da validação
+            Resultado da validação contendo problemas encontrados
         """
         pass
 
 class Normalizer(Generic[T, U], ABC):
-    """Interface abstrata para normalizadores de dados."""
+    """
+    Interface para normalizadores de dados.
     
+    Um normalizador é responsável por converter dados de um formato para outro,
+    aplicando validações no processo e retornando tanto o dado normalizado
+    quanto o resultado da validação.
+    
+    Type Parameters:
+        T: Tipo de entrada do normalizador
+        U: Tipo de saída do normalizador
+    """
     @abstractmethod
     def normalize(self, data: T) -> Tuple[U, ValidationResult]:
         """
-        Normaliza os dados fornecidos.
+        Normaliza dados de um tipo para outro, validando no processo.
         
         Args:
             data: Dados a serem normalizados
             
         Returns:
-            Tuple contendo os dados normalizados e o resultado da validação
+            Tupla contendo dados normalizados e resultado da validação
         """
         pass
 
 class ValidatingTransformer(Generic[T, U], ABC):
     """
-    Interface para transformadores que validam dados.
+    Interface para transformadores com validação integrada.
     
-    Combina validação e transformação em uma única operação.
+    Um transformador com validação converte dados de um formato para outro,
+    realizando validações no processo e retornando tanto o resultado da
+    transformação quanto o resultado da validação.
+    
+    Type Parameters:
+        T: Tipo de entrada do transformador
+        U: Tipo de saída do transformador
     """
-    
     @abstractmethod
     def transform_and_validate(self, data: T) -> Tuple[U, ValidationResult]:
         """
-        Transforma e valida os dados.
+        Transforma e valida dados.
         
         Args:
             data: Dados a serem transformados e validados
             
         Returns:
-            Tuple contendo os dados transformados e o resultado da validação
+            Tupla com dados transformados e resultado da validação
         """
         pass

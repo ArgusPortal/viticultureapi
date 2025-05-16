@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 @router.get("/", response_model=Dict[str, Any], summary="Dados de comercialização de vinhos")
-@cache_result(ttl_seconds=3600)
+@cache_result(ttl_seconds_or_func=3600)  # Atualizado para usar o parâmetro correto
 async def get_commercialization_data(
     year: Optional[int] = Query(None, description="Filtrar por ano específico"),
     current_user: str = Depends(verify_token)
