@@ -427,3 +427,118 @@ A suíte de testes foi expandida com:
 - Testes específicos para o sistema de cache
 - Verificações do funcionamento do sistema de validação
 - Testes de integração entre pipeline e cache
+
+## 14. Estrutura de Models
+
+### 14.1 Visão Geral dos Modelos
+
+A pasta `app/models` contém as definições dos modelos de dados utilizados na API, implementados com Pydantic para garantir validação de dados e tipagem estática. Estes modelos são fundamentais para:
+
+1. **Validação de entrada**: Garantir que dados recebidos pela API estejam no formato esperado
+2. **Documentação automática**: Gerar esquemas OpenAPI precisos com base nas definições dos modelos
+3. **Serialização/Deserialização**: Converter dados entre formatos JSON e objetos Python
+4. **Tipagem**: Fornecer suporte à análise estática e autocompletar em IDEs
+
+### 14.2 Modelos Principais
+
+#### 14.2.1 Modelos Base (`base.py`)
+
+Contém classes base que são estendidas por outros modelos específicos:
+
+```python
+class BaseModel(PydanticBaseModel):
+    """
+    Modelo base com configurações comuns para todos os modelos da aplicação.
+    """
+    class Config:
+        orm_mode = True
+        allow_population_by_field_name = True
+        validate_assignment = True
+
+class ErrorResponse(BaseModel):
+    """
+    Modelo padronizado para respostas de erro.
+    """
+    detail: str
+    status_code: int
+    code: Optional[str] = None
+    details: Optional[Dict[str, Any]] = None
+    traceback: Optional[str] = None
+```
+
+#### 14.2.2 Modelos de Produção (`production.py`)
+
+Representa os dados de produção vitivinícola:
+
+```python
+class ProductionRecord(BaseModel):
+    """
+    Representa um registro de dados de produção.
+    """
+    produto: str
+    quantidade: Optional[float] = None
+    ano: Optional[int] = None
+    unidade: Optional[str] = "litros"
+    regiao: Optional[str] = None
+
+class ProductionResponse(BaseModel):
+    """
+    Resposta para endpoints de produção.
+    """
+    data: List[ProductionRecord]
+    total: int
+    ano_filtro: Optional[int] = None
+    source_url: Optional[str] = None
+    source: str = "web_scraping"
+```
+
+#### 14.2.3 Modelos de Importação e Exportação
+
+Define estruturas para dados de comércio internacional:
+
+```python
+class TradeRecord(BaseModel):
+    """
+    Representa um registro de importação ou exportação.
+    """
+    pais: str
+    produto: str
+    quantidade: float
+    valor_usd: Optional[float] = None
+    ano: int
+    categoria: str
+
+class TradeResponse(BaseModel):
+    """
+    Resposta para endpoints de importação/exportação.
+    """
+    data: List[TradeRecord]
+    total: int
+    ano_filtro: Optional[int] = None
+    source_url: Optional[str] = None
+    source: str = "web_scraping"
+    message: Optional[str] = None
+```
+
+#### 14.2.4 Modelos de Comercialização (`commercialization.py`)
+
+```python
+class CommercializationRecord(BaseModel):
+    """
+    Representa um registro de comercialização no mercado interno.
+    """
+    produto: str
+    quantidade: float
+    ano: int
+    tipo_comercio: Optional[str] = "nacional"
+    
+class CommercializationResponse(BaseModel):
+    """
+    Resposta para endpoints de comercialização.
+    """
+    data: List[CommercializationRecord]
+    total: int
+    ano_filtro: Optional[int] = None
+    source_url: Optional[str] = None
+    source: str = "web_scraping"
+```
