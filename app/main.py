@@ -10,23 +10,42 @@ from contextlib import asynccontextmanager
 # Add the project root to Python path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
+# List of required packages to check
+REQUIRED_PACKAGES = [
+    "fastapi", "uvicorn", "pandas", "requests", "bs4",  # bs4 is the import name for beautifulsoup4
+    "dotenv", "jose", "passlib"  # dotenv is the import name for python-dotenv
+]
+
 # Check if dependencies are installed
-try:
-    from fastapi import FastAPI, Request
-    from fastapi.middleware.cors import CORSMiddleware
-    from fastapi.responses import JSONResponse
-except ImportError:
+missing_packages = []
+for package in REQUIRED_PACKAGES:
+    try:
+        __import__(package)
+    except ImportError:
+        # Map import names to PyPI package names for clear error messages
+        package_mapping = {
+            "bs4": "beautifulsoup4",
+            "dotenv": "python-dotenv"
+        }
+        # Use the PyPI package name in the error message if available
+        missing_packages.append(package_mapping.get(package, package))
+
+if missing_packages:
     print("\n===== MISSING DEPENDENCIES =====")
-    print("Some required packages are not installed. Please run:")
+    print("The following required packages are not installed:")
+    for package in missing_packages:
+        print(f"- {package}")
+    print("\nPlease install them using:")
+    print(f"pip install {' '.join(missing_packages)}")
+    print("\nOr install all requirements with:")
     print("pip install -r requirements.txt")
-    print("\nIf requirements.txt is not available, run:")
-    print("pip install fastapi uvicorn pandas requests beautifulsoup4 python-dotenv")
-    print("\nFor data analysis and visualization capabilities, you may also want to install:")
-    print("pip install matplotlib seaborn plotly numpy scipy statsmodels")
-    print("\nFor advanced dashboarding, consider:")
-    print("pip install dash streamlit")
     print("=====================================\n")
     sys.exit(1)
+
+# Now that we've checked dependencies, import the rest
+from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from app.api.api import api_router
 from app.core.config import settings

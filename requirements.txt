@@ -13,11 +13,9 @@ beautifulsoup4>=4.12.0
 # Configuration
 python-dotenv>=1.0.0
 
-# Database (if needed)
-# sqlalchemy>=2.0.7
-# psycopg2-binary>=2.9.5
-# alembic>=1.10.2
+# Authentication
+python-jose>=3.3.0
+passlib>=1.7.4
 
-# Development tools
-pytest>=7.3.1
-black>=23.3.0
+# Additional dependencies
+matplotlib>=3.7.1

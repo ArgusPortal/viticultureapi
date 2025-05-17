@@ -2,6 +2,7 @@ from fastapi import APIRouter, HTTPException, Query, Depends
 from typing import Optional
 from app.scraper.imports_scraper import ImportsScraper
 from app.core.security import verify_token
+from app.core.hypermedia import add_links  # Add this import
 import logging
 import traceback
 
@@ -28,7 +29,7 @@ def build_api_response(data, year=None):
     if not data.get("data") or len(data.get("data", [])) == 0:
         logger.warning(f"No data returned for year {year}")
         # Instead of 404, return empty data with status 200
-        return {
+        response = {
             "data": [],
             "total": 0,
             "ano_filtro": year,
@@ -36,14 +37,18 @@ def build_api_response(data, year=None):
             "source": "no_data",
             "message": f"Não foram encontrados dados para o ano {year if year else 'atual'}"
         }
+        return add_links(response, "imports", year)
     
-    return {
+    response = {
         "data": data.get("data", []),
         "total": len(data.get("data", [])),
         "ano_filtro": year,
         "source_url": data.get("source_url", ""),
         "source": data.get("source", "unknown")
     }
+    
+    # Add HATEOAS links to the response
+    return add_links(response, "imports", year)
 
 @router.get("/", 
     summary="Dados de Importação",

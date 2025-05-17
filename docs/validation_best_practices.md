@@ -264,3 +264,68 @@ class CPFValidator(Validator[str]):
 6. **Documente validadores**: Mantenha documentação atualizada sobre as regras de validação aplicadas
 7. **Evite duplicação**: Reutilize validadores em diferentes contextos usando composição
 8. **Testes unitários**: Crie testes específicos para seus validadores com casos de borda
+
+## 7. Tratamento de Valores Nulos e Tipo-Segurança
+
+### 7.1. Verificações Explícitas para Valores Nulos
+
+Para garantir tipo-segurança em Python, especialmente com tipagem estática:
+
+```python
+def validate(self, data: Optional[Union[int, float]]) -> ValidationResult:
+    # Primeiro faça as validações comuns
+    result, should_continue = validate_common(
+        data, self.field_name, self.required
+    )
+    
+    if not should_continue:
+        return result
+        
+    # Garantir explicitamente que data não é None antes de usar operadores de comparação
+    if data is None:
+        return result
+    
+    # Agora é seguro usar operadores de comparação com data
+    if data < 0 and not self.allow_negative:
+        result.add_issue(ValidationIssue(
+            field=self.field_name,
+            message="Valor negativo não permitido",
+            severity=ValidationSeverity.ERROR,
+            value=data
+        ))
+```
+
+### 7.2. Verificações de Tipo para Operações Específicas
+
+Para operações que exigem tipos específicos:
+
+```python
+# Para strings
+if data is not None:
+    if not isinstance(data, str):
+        result.add_issue(ValidationIssue(
+            field=self.field_name,
+            message="Valor deve ser uma string",
+            severity=ValidationSeverity.ERROR,
+            value=data
+        ))
+    else:
+        # Operações seguras com strings
+        if self.pattern and not self.pattern.match(data):
+            # Validação de padrão regex
+```
+
+### 7.3. Lidando com NaN em Validações Numéricas
+
+Valores NaN requerem tratamento especial:
+
+```python
+if isinstance(data, float) and pd.isna(data):
+    result.add_issue(ValidationIssue(
+        field=self.field_name,
+        message="Valor numérico contém NaN (não é um número)",
+        severity=ValidationSeverity.ERROR,
+        value="NaN"
+    ))
+    return result
+```

@@ -2,6 +2,7 @@ from fastapi import APIRouter, HTTPException, Query, Depends, status
 from typing import Optional
 from app.scraper.processing_scraper import ProcessingScraper
 from app.core.security import verify_token
+from app.core.hypermedia import add_links  # Add this import
 import logging
 import traceback
 from enum import Enum
@@ -28,19 +29,7 @@ class GrapeCategory(str, Enum):
     unclassified = "unclassified"
 
 def build_api_response(data, year=None):
-    """
-    Build standardized API response from scraped data
-    
-    Args:
-        data: Dictionary containing scraped data and metadata
-        year: Optional year parameter used for filtering
-        
-    Returns:
-        Dictionary with standardized response format
-        
-    Raises:
-        HTTPException: If data is invalid or empty
-    """
+    """Build standardized API response from scraped data"""
     if not data or not isinstance(data, dict):
         logger.warning("Invalid data format received")
         raise HTTPException(
@@ -62,13 +51,16 @@ def build_api_response(data, year=None):
             detail=f"Dados não encontrados para o ano {year if year else 'atual'}"
         )
     
-    return {
+    response = {
         "data": data.get("data", []),
         "total": len(data.get("data", [])),
         "ano_filtro": year,
         "source_url": data.get("source_url", ""),
         "source": data.get("source", "unknown")
     }
+    
+    # Add HATEOAS links to the response
+    return add_links(response, "processing", year)
 
 @router.get("/", 
     summary="Dados gerais de processamento", 

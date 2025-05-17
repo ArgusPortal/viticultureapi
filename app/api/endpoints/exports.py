@@ -2,6 +2,7 @@ from fastapi import APIRouter, HTTPException, Query, Depends
 from typing import Optional
 from app.scraper.exports_scraper import ExportsScraper
 from app.core.security import verify_token
+from app.core.hypermedia import add_links  # Add this import
 import logging
 import traceback
 
@@ -32,13 +33,16 @@ def build_api_response(data, year=None):
             detail=f"Dados não encontrados para o ano {year if year else 'atual'}"
         )
     
-    return {
+    response = {
         "data": data.get("data", []),
         "total": len(data.get("data", [])),
         "ano_filtro": year,
         "source_url": data.get("source_url", ""),
         "source": data.get("source", "unknown")
     }
+    
+    # Add HATEOAS links to the response
+    return add_links(response, "exports", year)
 
 @router.get("/", 
     summary="Dados de Exportação", 

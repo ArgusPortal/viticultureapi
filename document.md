@@ -330,4 +330,100 @@ A API implementa múltiplas camadas de cache para melhorar o desempenho:
    - `/api/v1/cache/clear`: Limpa o cache (útil para testes e quando há atualizações de dados)
    - `/api/v1/cache/test`: Demonstra a diferença de performance entre respostas cacheadas e não-cacheadas
 
+### 11.2 Robustez do Sistema de Cache
+
+O sistema de cache foi projetado para alta resiliência, garantindo que falhas no cache nunca comprometam a funcionalidade principal:
+
+1. **Tratamento Robusto de Exceções**:
+   - Todas as operações de cache são envolvidas em blocos try/except
+   - Falhas no cache apenas ativam o fallback para execução direta da função original
+   - Logging detalhado de problemas para diagnóstico
+
+2. **Medição de Performance**:
+   - Sistema opcional de medição de tempo de execução
+   - Registros de tempo em logs para análise de pontos lentos
+   - Adição automática de métricas de tempo em respostas (quando configurado)
+
+3. **Segurança de Tipos**:
+   - Verificações explícitas para evitar operações com valores potencialmente nulos
+   - Tratamento adequado de casos onde o tempo de início pode não estar definido
+   - Compatibilidade com checagem estática de tipos via mypy/pylance
+
+4. **Otimizações de Chaves**:
+   - Geração inteligente de chaves de cache baseada em nome de função e parâmetros
+   - Limitação automática do tamanho de chaves para evitar problemas com provedores de cache
+   - Opção para incluir/excluir certos parâmetros na geração de chaves
+
 A implementação melhora drasticamente o desempenho para dados que não mudam frequentemente, como estatísticas históricas de produção, importação e exportação.
+
+## 12. Implementação HATEOAS (Hypermedia as the Engine of Application State)
+
+A API foi aprimorada para suportar o princípio HATEOAS, elevando-a ao nível 3 de maturidade REST de Richardson:
+
+1. **Links Dinâmicos**:
+   - Cada resposta inclui links relacionados sob a chave `_links`
+   - Navegação intuitiva entre recursos relacionados
+   - Descoberta automática de endpoints disponíveis
+
+2. **Estrutura de Links**:
+   - `self`: Link para o próprio recurso
+   - Links específicos do recurso (ex: `/production/wine`, `/imports/vinhos`)
+   - `related`: Links para outros endpoints principais
+   - `prev_year`/`next_year`: Navegação temporal quando aplicável
+
+3. **Benefícios**:
+   - **Auto-documentação**: A API se torna auto-explicativa
+   - **Desacoplamento**: Clientes não precisam codificar URLs rigidamente
+   - **Descoberta**: Facilita a exploração dos endpoints disponíveis
+   - **Evolução**: Permite que a API evolua sem quebrar clientes existentes
+
+Exemplo de resposta com HATEOAS:
+```json
+{
+  "data": [...],
+  "total": 25,
+  "ano_filtro": 2022,
+  "_links": {
+    "self": {"href": "/api/v1/production"},
+    "wine": {"href": "/api/v1/production/wine?year=2022"},
+    "grape": {"href": "/api/v1/production/grape?year=2022"},
+    "derivative": {"href": "/api/v1/production/derivative?year=2022"},
+    "prev_year": {"href": "/api/v1/production?year=2021"},
+    "next_year": {"href": "/api/v1/production?year=2023"},
+    "related": {
+      "imports": {"href": "/api/v1/imports?year=2022"},
+      "exports": {"href": "/api/v1/exports?year=2022"},
+      "processing": {"href": "/api/v1/processing?year=2022"}
+    }
+  }
+}
+```
+
+## 13. Melhorias Adicionais de Sistema
+
+### 13.1 Sistema de Verificação de Dependências
+
+A aplicação agora realiza uma verificação completa das dependências na inicialização:
+
+- Detecta pacotes Python necessários antes de iniciar a aplicação
+- Fornece instruções claras para instalação de dependências faltantes
+- Previne falhas em runtime causadas por módulos ausentes
+- Verifica tanto nomes de módulo quanto seus aliases de importação
+
+### 13.2 Manejo Avançado de Tipos
+
+Todas as partes críticas do sistema foram aprimoradas com:
+
+- Anotações de tipo explícitas usando TypeVar e Generics
+- Compatibilidade com verificações estáticas via mypy e pylance
+- Validação de tipo em runtime para operações sensíveis a tipo
+- Tratamento seguro de valores potencialmente nulos
+
+### 13.3 Testes de Validação Integrados
+
+A suíte de testes foi expandida com:
+
+- Script de validação para confirmar integridade do sistema
+- Testes específicos para o sistema de cache
+- Verificações do funcionamento do sistema de validação
+- Testes de integração entre pipeline e cache

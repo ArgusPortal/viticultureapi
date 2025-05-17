@@ -289,7 +289,7 @@ async def get_dependencies(current_user: str = Depends(verify_token)):
                 # Lista de pacotes comuns para checar individualmente
                 common_packages = [
                     "fastapi", "uvicorn", "pydantic", "starlette", "requests", 
-                    "beautifulsoup4", "python-dotenv", "pandas", "numpy", 
+                    "bs4", "dotenv", "pandas", "numpy",  # Updated to use import names
                     "matplotlib", "seaborn", "plotly", "scipy", "statsmodels",
                     "dash", "streamlit", "pytest", "httpx", "jose", "passlib"
                 ]

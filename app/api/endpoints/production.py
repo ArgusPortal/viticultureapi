@@ -11,6 +11,7 @@ from datetime import datetime
 import traceback
 from app.core.cache import cache_result
 from app.core.utils import clean_navigation_arrows
+from app.core.hypermedia import add_links  # Add this import
 
 logger = logging.getLogger(__name__)
 
@@ -552,13 +553,16 @@ def build_api_response(data, year=None):
             detail=f"Dados não encontrados para o ano {year if year else 'atual'}"
         )
     
-    return {
+    response = {
         "data": data.get("data", []),
         "total": len(data.get("data", [])),
         "ano_filtro": year,
         "source_url": data.get("source_url", ""),
         "source": data.get("source", "unknown")
     }
+    
+    # Add HATEOAS links to the response
+    return add_links(response, "production", year)
 
 @router.get("/", response_model=dict, summary="Dados gerais de produção de vinhos")
 @cache_result(ttl_seconds_or_func=3600)  # Usando a versão consolidada
