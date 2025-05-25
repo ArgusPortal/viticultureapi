@@ -410,4 +410,4 @@ Propriedades principais:
 3. **Navegação temporal**: Links para anos anteriores/posteriores quando aplicável
 4. **Tratamento de tipo seguro**: Implementação robusta contra erros de tipo
 
-A estrutura de links segue o formato HAL (Hypertext Application Language) para máxima compatibilidade com clientes REST.
+A estrutura de links segue o formato HAL (Hypertext Application Language) para máxima compatibilidade com clientes RE
