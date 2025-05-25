@@ -6,6 +6,19 @@ Este documento descreve a arquitetura geral do sistema VitiBrasil API, apresenta
 
 O VitiBrasil API é uma aplicação baseada em FastAPI que fornece dados estruturados sobre a indústria vitivinícola brasileira. A arquitetura do sistema é organizada em camadas, seguindo padrões de Clean Architecture e princípios SOLID.
 
+### Diagrama de Arquitetura
+
+<!-- 
+DIAGRAMA DE ARQUITETURA - IMAGEM SERÁ INSERIDA MANUALMENTE 
+Recomendação: Inserir aqui a imagem do diagrama de arquitetura completo.
+Nome sugerido do arquivo: architecture_diagram.png
+Tamanho recomendado: 800-1200px de largura
+-->
+
+![Diagrama de Arquitetura da VitiBrasil API](../docs/images/architecture_diagram.png)
+
+### Estrutura de Camadas
+
 ```mermaid
 graph TB
     subgraph "API Layer"

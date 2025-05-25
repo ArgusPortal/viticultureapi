@@ -11,15 +11,11 @@ A pasta raiz do projeto contém arquivos essenciais para a configuração, execu
 ├── main.py                # Ponto de entrada principal da aplicação
 ├── config.py              # Configurações globais da aplicação
 ├── requirements.txt       # Dependências do projeto
-├── Dockerfile             # Configuração para containerização
-├── docker-compose.yml     # Configuração para ambiente de desenvolvimento
 ├── .env                   # Variáveis de ambiente (não versionado)
 ├── .env.example           # Exemplo de variáveis de ambiente
 ├── .gitignore             # Arquivos ignorados pelo git
 ├── README.md              # Documentação principal do projeto
 ├── LICENSE                # Informações de licenciamento
-├── pyproject.toml         # Configuração de build e dependências (poesia)
-├── poetry.lock            # Lock file para dependências consistentes
 └── app/                   # Pasta principal da aplicação
 ```
 
@@ -195,10 +191,16 @@ pydantic>=2.4.2
 pydantic-settings>=2.0.3
 starlette>=0.27.0
 
-# Banco de dados
-sqlalchemy>=2.0.22
-alembic>=1.12.0
-asyncpg>=0.28.0
+# Processamento de Dados
+pandas>=2.1.1
+numpy>=1.26.0
+matplotlib>=3.8.0
+scikit-learn>=1.3.1
+
+# Web Scraping e Requisições
+requests>=2.31.0
+beautifulsoup4>=4.12.2
+urllib3>=2.0.7
 
 # Autenticação e segurança
 python-jose>=3.3.0
@@ -206,215 +208,25 @@ passlib>=1.7.4
 python-multipart>=0.0.6
 bcrypt>=4.0.1
 
-# Cache
-redis>=5.0.0
-aioredis>=2.0.1
-
 # Utils
 python-dotenv>=1.0.0
 httpx>=0.25.0
 tenacity>=8.2.3
 loguru>=0.7.2
 
-# Processamento
-pandas>=2.1.1
-numpy>=1.26.0
-scikit-learn>=1.3.1
-
-# Monitoramento
-prometheus-fastapi-instrumentator>=6.1.0
-
-# Desenvolvimento
+# Testing
 pytest>=7.4.2
 pytest-asyncio>=0.21.1
+pytest-cov>=4.1.0
+
+# Desenvolvimento
 black>=23.9.1
 isort>=5.12.0
 mypy>=1.5.1
 flake8>=6.1.0
+types-requests>=2.31.0.2
+types-python-jose>=3.3.4.8
 ```
-
-### 2.4. `Dockerfile`
-
-Define como a aplicação deve ser containerizada para implantação:
-
-```dockerfile
-FROM python:3.11-slim as base
-
-# Configure environment
-ENV PYTHONFAULTHANDLER=1 \
-    PYTHONHASHSEED=random \
-    PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1 \
-    PIP_DEFAULT_TIMEOUT=100 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1 \
-    PIP_NO_CACHE_DIR=1
-
-WORKDIR /app
-
-# Install system dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc \
-    libpq-dev \
-    && rm -rf /var/lib/apt/lists/*
-
-# Install Python dependencies
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-
-# Copy application code
-COPY . .
-
-# Expose API port
-EXPOSE 8000
-
-# Start app with uvicorn
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
-```
-
-Esse Dockerfile inclui:
-1. Base Python 3.11 slim para uma imagem mais compacta
-2. Configurações de ambiente Python otimizadas
-3. Dependências do sistema necessárias para extensões Python
-4. Instalação de dependências do projeto
-5. Cópia do código da aplicação
-6. Exposição da porta da API
-7. Comando para iniciar o servidor uvicorn
-
-### 2.5. `docker-compose.yml`
-
-Configuração para execução em ambiente de desenvolvimento com serviços relacionados:
-
-```yaml
-version: '3.8'
-
-services:
-  api:
-    build: .
-    ports:
-      - "8000:8000"
-    volumes:
-      - .:/app
-    environment:
-      - ENVIRONMENT=development
-      - DATABASE_URL=postgresql://postgres:postgres@db:5432/viticulture
-      - REDIS_URL=redis://redis:6379/0
-      - LOG_LEVEL=DEBUG
-    depends_on:
-      - db
-      - redis
-    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
-
-  db:
-    image: postgres:15
-    ports:
-      - "5432:5432"
-    environment:
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=postgres
-      - POSTGRES_DB=viticulture
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-
-  redis:
-    image: redis:7
-    ports:
-      - "6379:6379"
-    volumes:
-      - redis_data:/data
-
-volumes:
-  postgres_data:
-  redis_data:
-```
-
-Este arquivo configura:
-1. O serviço principal da API com hot-reloading para desenvolvimento
-2. Banco de dados PostgreSQL para persistência de dados
-3. Redis para cache e tarefas em segundo plano
-4. Volumes para persistência de dados entre reinicializações
-5. Variáveis de ambiente para configuração dos serviços
-
-### 2.6. `pyproject.toml`
-
-Configuração moderna para gerenciamento de dependências e build com Poetry:
-
-```toml
-[tool.poetry]
-name = "viticultureapi"
-version = "0.1.0"
-description = "API para análise de dados da viticultura brasileira"
-authors = ["Equipe ViticultureAPI <contato@viticultureapi.com.br>"]
-readme = "README.md"
-
-[tool.poetry.dependencies]
-python = "^3.11"
-fastapi = "^0.104.0"
-uvicorn = "^0.23.2"
-pydantic = "^2.4.2"
-pydantic-settings = "^2.0.3"
-sqlalchemy = "^2.0.22"
-alembic = "^1.12.0"
-asyncpg = "^0.28.0"
-python-jose = "^3.3.0"
-passlib = "^1.7.4"
-python-multipart = "^0.0.6"
-bcrypt = "^4.0.1"
-redis = "^5.0.0"
-aioredis = "^2.0.1"
-python-dotenv = "^1.0.0"
-httpx = "^0.25.0"
-tenacity = "^8.2.3"
-loguru = "^0.7.2"
-pandas = "^2.1.1"
-numpy = "^1.26.0"
-scikit-learn = "^1.3.1"
-
-[tool.poetry.group.dev.dependencies]
-pytest = "^7.4.2"
-pytest-asyncio = "^0.21.1"
-black = "^23.9.1"
-isort = "^5.12.0"
-mypy = "^1.5.1"
-flake8 = "^6.1.0"
-httpx = "^0.25.0"
-
-[build-system]
-requires = ["poetry-core"]
-build-backend = "poetry.core.masonry.api"
-
-[tool.black]
-line-length = 88
-target-version = ['py311']
-
-[tool.isort]
-profile = "black"
-line_length = 88
-
-[tool.mypy]
-python_version = "3.11"
-disallow_untyped_defs = true
-disallow_incomplete_defs = true
-check_untyped_defs = true
-disallow_untyped_decorators = true
-no_implicit_optional = true
-strict_optional = true
-warn_redundant_casts = true
-warn_return_any = true
-warn_unused_ignores = true
-
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-python_files = "test_*.py"
-python_classes = "Test*"
-python_functions = "test_*"
-```
-
-Este arquivo define:
-1. Metadados do projeto como nome, versão e autores
-2. Dependências de produção com versões específicas para estabilidade
-3. Dependências de desenvolvimento separadas
-4. Configurações para ferramentas de qualidade de código (black, isort, mypy)
-5. Configurações para testes com pytest
 
 ## 3. Interação entre Arquivos Raiz e Componentes
 
@@ -422,17 +234,15 @@ A estrutura de arquivos na raiz foi projetada para facilitar:
 
 1. **Configuração**: `config.py` e `.env` fornecem configuração centralizada acessível a todos os módulos
 2. **Inicialização**: `main.py` é o ponto de entrada que conecta e configura todos os componentes
-3. **Dependências**: `requirements.txt` e `pyproject.toml` garantem consistência de ambiente
-4. **Implantação**: `Dockerfile` e `docker-compose.yml` facilitam implantações em diferentes ambientes
-5. **Documentação**: `README.md` e outros arquivos servem como porta de entrada para novos desenvolvedores
+3. **Dependências**: `requirements.txt` garante consistência de ambiente
+4. **Documentação**: `README.md` e outros arquivos servem como porta de entrada para novos desenvolvedores
 
 ## 4. Conclusão
 
 Os arquivos na pasta raiz da ViticultureAPI estabelecem a fundação sobre a qual o resto da aplicação é construída. Eles garantem:
 
 1. **Configurabilidade**: através de variáveis de ambiente e arquivos de configuração
-2. **Portabilidade**: através de containerização com Docker
-3. **Manutenibilidade**: através de dependências bem definidas e ferramentas de qualidade
-4. **Documentação**: através de documentação clara e estruturada
+2. **Manutenibilidade**: através de dependências bem definidas e ferramentas de qualidade
+3. **Documentação**: através de documentação clara e estruturada
 
 Esta arquitetura de raiz robusta permite que o desenvolvimento e implantação da aplicação aconteçam de forma suave e consistente, independentemente do ambiente ou da complexidade do sistema.
