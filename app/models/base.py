@@ -14,6 +14,7 @@ T = TypeVar('T', bound=BaseModel)
 class BaseConfig:
     """Configuração base compartilhada por todos os modelos."""
     arbitrary_types_allowed = True
+    validate_by_name = True  # Substitui allow_population_by_field_name no Pydantic v2
 
 class ResponseBase(BaseModel):
     """Modelo base para respostas da API."""

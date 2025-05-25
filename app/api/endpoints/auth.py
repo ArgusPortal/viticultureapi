@@ -38,7 +38,7 @@ def load_users_from_env():
         
         i += 1
     
-    print(f"Usuários carregados do .env: {[u for u in users.keys()]}")
+    print(f"Número de usuários carregados do .env: {len(users)}")
     return users
 
 # Carrega usuários do .env ou usa o fake_users_db para desenvolvimento
@@ -126,9 +126,6 @@ async def login_for_access_token(
     5. Agora você pode acessar todos os endpoints protegidos
     """
     print(f"Tentativa de login com username: {username}")
-    
-    # Mostrar os usuários disponíveis para debug
-    print(f"Usuários disponíveis: {list(users_db.keys())}")
     
     user = users_db.get(username)
     if not user:

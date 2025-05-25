@@ -31,7 +31,6 @@ class ProcessingRecord(BaseModel):
     
     class Config(BaseConfig):
         """Configuração do modelo ProcessingRecord."""
-        allow_population_by_field_name = True
         json_schema_extra = {
             "example": {
                 "Grupo": "Uvas Viníferas",

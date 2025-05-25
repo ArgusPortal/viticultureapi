@@ -30,7 +30,6 @@ class ProductionRecord(BaseModel):
     
     class Config(BaseConfig):
         """Configuração do modelo ProductionRecord."""
-        allow_population_by_field_name = True
         json_schema_extra = {
             "example": {
                 "produto": "Vinho Tinto",

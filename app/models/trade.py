@@ -36,7 +36,6 @@ class TradeRecord(BaseModel):
     
     class Config(BaseConfig):
         """Configuração do modelo TradeRecord."""
-        allow_population_by_field_name = True
         json_schema_extra = {
             "example": {
                 "Pais": "Argentina",
