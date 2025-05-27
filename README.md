@@ -383,5 +383,5 @@ Este projeto está licenciado sob a licença MIT - veja o arquivo [LICENSE](LICE
 
 ---
 
-Desenvolvido com ❤️ como Tech Challenge para FIAP - Pós-Graduação em Machine Learning Engineering
+Desenvolvido por Argus Portal como Tech Challenge para FIAP - Pós-Graduação em Machine Learning Engineering - Turma 5MLET
 
